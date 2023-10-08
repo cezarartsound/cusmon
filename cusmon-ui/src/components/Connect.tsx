@@ -16,7 +16,7 @@ export const Connect: FC<{
   const [logout] = useLogout()
   const [user] = useUser()
 
-  const [username, setUsername] = useState('cusmon-app')
+  const [username, setUsername] = useState('username')
   const [password, setPassword] = useState('password')
   const [server, setServer] = useState('server')
   const [parameters, setParameters] = useState('retryWrites=true&w=majority')

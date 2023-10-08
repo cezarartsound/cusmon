@@ -19,7 +19,8 @@ const MaskedInput: FC<TextFieldProps & {mask?: string}> = (props) => {
   )
 }
 
-export const CellEditor: FC<{schema: FieldSchema, readOnly?: boolean} & RenderEditCellProps<Record<string, unknown>, unknown>> = ({
+export const CellEditor: FC<{schema: FieldSchema, readOnly?: boolean, label?: string} & RenderEditCellProps<Record<string, unknown>, unknown>> = ({
+  label,
   schema,
   row,
   column,
@@ -29,8 +30,9 @@ export const CellEditor: FC<{schema: FieldSchema, readOnly?: boolean} & RenderEd
   const base: Partial<TextFieldProps & {mask?: string}> = { 
     className: 'w-full',
     size: 'small',
-    placeholder: schema.appearance?.placeholder,
-    mask: schema.appearance?.mask,
+    label,
+    placeholder: schema.appearance.placeholder,
+    mask: schema.appearance.mask,
     value: row[column.key],
     disabled: readOnly,
     onChange: e => onRowChange({...row, [column.key]: e.target.value}),
@@ -74,12 +76,12 @@ export const CellEditor: FC<{schema: FieldSchema, readOnly?: boolean} & RenderEd
       return <Autocomplete
         className='w-full'
         size='small'
-        placeholder={schema.appearance?.placeholder}
+        placeholder={schema.appearance.placeholder}
         value={row[column.key]}
         onChange={(_, value) => onRowChange({...row, [column.key]: value})}
         multiple={schema.validations?.multiple}
         options={schema.validations?.options ?? []}
-        renderInput={(params) => <TextField {...params}/>}
+        renderInput={(params) => <TextField {...params} disabled={readOnly} label={label} />}
       />
     case 'reference':
     case 'string': 

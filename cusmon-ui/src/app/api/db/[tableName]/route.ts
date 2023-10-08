@@ -10,12 +10,13 @@ const FieldType = z.enum(['string', 'select', 'decimal', 'integer', 'currency', 
 const FieldSchema = z.object({
   type: FieldType,
   editable: z.boolean().optional(),
+  default: z.string().optional(),
   appearance: z.object({
-    displayName: z.string().optional(),
+    displayName: z.string(),
     placeholder: z.string().optional(),
     mask: z.string().optional(),
     hide: z.boolean().optional(),
-  }).optional(),
+  }),
   validations: z.object({
     options: z.array(z.string()).optional(),
     min: z.number().optional(),
@@ -25,6 +26,11 @@ const FieldSchema = z.object({
   reference: z.object({
     table: z.string(),
     fields: z.array(z.string()),
+  }).optional(),
+  import: z.object({
+    columnNames: z.array(z.string()).optional(),
+    dateFormat: z.string().optional(),
+    searchReferenceColumn: z.string().optional(),
   }).optional(),
   sort: z.enum(['ASC', 'DESC']).optional(),
 })

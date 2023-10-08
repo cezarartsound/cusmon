@@ -14,11 +14,15 @@ import BackupTableIcon from '@mui/icons-material/BackupTable'
 import ContentPasteIcon from '@mui/icons-material/ContentPaste'
 import { CellEditor } from './CellEditor'
 import { NewItemFormModal } from './NewItemFormModal'
+import { ImportFileModal } from './ImportFileModal'
 
 const cellEditor = (schema: FieldSchema): FC<RenderEditCellProps<Record<string, unknown>, unknown>> => 
   (props) => <CellEditor {...props} schema={schema}/>
 
-const cellViewer = (schema: FieldSchema, refTablesItems: Record<string, Record<string, unknown>[]>): FC<RenderCellProps<Record<string, unknown>, unknown>> => ({
+const cellViewer = (
+  schema: FieldSchema, 
+  refTablesItems: Record<string, Record<string, unknown>[]>,
+): FC<RenderCellProps<Record<string, unknown>, unknown>> => ({
   row,
   column,
 }) => {
@@ -35,7 +39,7 @@ const cellViewer = (schema: FieldSchema, refTablesItems: Record<string, Record<s
       return <Typography className={classes}>{refValues.length ? refValues.join(', ') : raw?.toString()}</Typography>
     case 'select': 
       if (schema.validations?.multiple) {
-        return (raw as string[])?.map(val => <Chip size='small' label={val}/>)
+        return (raw as string[])?.map(val => <Chip size='small' key={val} label={val}/>)
       }
     default:
       return <Typography className={classes}>{raw?.toString()}</Typography>
@@ -57,12 +61,13 @@ export const TableEditor: FC<{
   const [loading, setLoading] = useState(false)
   const [items, setItems] = useState<Record<string, unknown>[]>([])
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([])
-  const [refTablesItems, setRefTablesItems] = useState<Record<string, Record<string, unknown>[]>>([])
+  const [refTablesItems, setRefTablesItems] = useState<Record<string, Record<string, unknown>[]>>({})
   const [tableSettings, _setTableSettings] = useState<TableSettings>({})
   const [schemaOpen, setSchemaOpen] = useState<boolean>(false)
   const [sortColumns, setSortColumns] = useState<SortColumn[]>([])
   const [actionsMenuAnchor, setActionsMenuAnchor] = useState<null | HTMLElement>(null)
   const [addingNew, setAddingNew] = useState<boolean>(false)
+  const [importingFile, setImportingFile] = useState<boolean>(false)
 
 
   const sortItems = (cols: SortColumn[]) => {
@@ -132,7 +137,7 @@ export const TableEditor: FC<{
     .filter(([_, schema]) => !schema.appearance?.hide)
     .map(([fieldName, schema]): ColumnOrColumnGroup<Record<string, unknown>> => ({
       key: fieldName,
-      name: schema.appearance?.displayName ?? fieldName,
+      name: schema.appearance.displayName,
       editable: schema.editable ?? false,
       renderEditCell: cellEditor(schema),
       renderCell: cellViewer(schema, refTablesItems),
@@ -151,8 +156,20 @@ export const TableEditor: FC<{
     fetch(`api/db/${tableName}/items`, {method: 'POST', body: JSON.stringify(item)})
       .then(res => {
         if (res.ok) {
-          setItems(i => [...i, item])
+          setItems(i => [...i.filter(ii => item['_id'] !== ii['_id']), item])
           setAddingNew(false)
+        }
+      })
+      .finally(() => setLoading(false))
+  }
+
+  const onSaveNewItems = (items: Record<string, unknown>[]) => {
+    setLoading(true)
+    fetch(`api/db/${tableName}/items/bulk`, {method: 'POST', body: JSON.stringify(items)})
+      .then(res => {
+        if (res.ok) {
+          setItems(i => [...i.filter(ii => !items.some(it => ii['_id'] === it['_id'])), ...items])
+          setImportingFile(false)
         }
       })
       .finally(() => setLoading(false))
@@ -189,9 +206,9 @@ export const TableEditor: FC<{
             <ListItemIcon><NoteAddIcon/></ListItemIcon>
             <ListItemText>Add row</ListItemText>
           </MenuItem>
-          <MenuItem>
+          <MenuItem onClick={() => setImportingFile(true)}>
             <ListItemIcon><BackupTableIcon/></ListItemIcon>
-            <ListItemText>Import CSV</ListItemText>
+            <ListItemText>Import file</ListItemText>
           </MenuItem>
           <MenuItem disabled={!selectedRows.length || !selectedRows[0]['_id']} onClick={onDeleteSelected}>
             <ListItemIcon><DeleteIcon/></ListItemIcon>
@@ -228,7 +245,7 @@ export const TableEditor: FC<{
       onSave={onSaveSchema}
     />
     
-    {!!tableSettings.schema && 
+    {!!tableSettings.schema && <>
       <NewItemFormModal
         tableSchema={tableSettings.schema}
         readOnly={loading}
@@ -236,6 +253,14 @@ export const TableEditor: FC<{
         onSave={onSaveNewItem}
         onClose={() => setAddingNew(false)}
       />
-    }
+      <ImportFileModal
+        tableSchema={tableSettings.schema}
+        refTablesData={refTablesItems}
+        readOnly={loading}
+        open={importingFile}
+        onSave={onSaveNewItems}
+        onClose={() => setImportingFile(false)}
+      />
+    </>}
   </>)
 } 

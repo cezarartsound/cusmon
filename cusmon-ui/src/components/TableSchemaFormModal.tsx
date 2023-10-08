@@ -22,14 +22,8 @@ import Tooltip from '@mui/material/Tooltip'
 import { IconButton } from '@mui/material'
 import UpIcon from '@mui/icons-material/ArrowUpward'
 import DownIcon from '@mui/icons-material/ArrowDownward'
-
-interface TableSchemaFormModalProps {
-  tables: string[]
-  open: boolean
-  value: TableSchema
-  onSave: (newValue: TableSchema) => void
-  onClose: () => void
-}
+import ClearIcon from '@mui/icons-material/Clear'
+import { CellEditor } from './CellEditor'
 
 type Entry = [string, FieldSchema]
 
@@ -51,6 +45,9 @@ const updateValidations = (index: number, fn: (a: NonNullable<FieldSchema['valid
 
 const updateReference = (index: number, fn: (a: NonNullable<FieldSchema['reference']>) => FieldSchema['reference']) => (prev: Entry[]): Entry[] => 
   prev.map<Entry>(([k, v], i) => [k, i === index ? {...v, reference: fn(v.reference ?? {table: '', fields: []})} : v])
+
+const updateImport = (index: number, fn: (a: NonNullable<FieldSchema['import']>) => FieldSchema['import']) => (prev: Entry[]): Entry[] => 
+  prev.map<Entry>(([k, v], i) => [k, i === index ? {...v, import: fn(v.import ?? {})} : v])
 
 const typeOptions: {id: FieldType, label: string}[] = [
   {id: 'string', label: 'String'},
@@ -78,7 +75,13 @@ const getTypeColor = (type: FieldType): string => {
   }
 }
 
-export const TableSchemaFormModal: FC<TableSchemaFormModalProps> = ({
+export const TableSchemaFormModal: FC<{
+  tables: string[]
+  open: boolean
+  value: TableSchema
+  onSave: (newValue: TableSchema) => void
+  onClose: () => void
+}> = ({
   tables,
   open,
   value,
@@ -110,7 +113,7 @@ export const TableSchemaFormModal: FC<TableSchemaFormModalProps> = ({
       open={open}
       onClose={onClose}
     >
-      <Box className='absolute max-h-screen overflow-scroll flex gap-5 flex-col w-5/6 h-fit p-4 inset-y-1/2 inset-x-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-md drop-shadow'> 
+      <Box className='absolute max-h-screen overflow-auto flex gap-5 flex-col w-5/6 h-fit p-4 inset-y-1/2 inset-x-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-md'> 
         <Typography variant='h4' color='GrayText'>Schema</Typography>
         <hr/>
         <List>
@@ -121,18 +124,19 @@ export const TableSchemaFormModal: FC<TableSchemaFormModalProps> = ({
                   <Avatar sx={{bgcolor: getTypeColor(schema.type)}}>{schema.type.substring(0, 1).toUpperCase()}</Avatar>
                 </Tooltip>
               </ListItemIcon>
-              <ListItemText primary={(schema.appearance?.displayName ?? key) + (schema.editable ? ' (editable)' : '')} />
+              <ListItemText primary={(schema.appearance.displayName) + (schema.editable ? ' (editable)' : '')} />
               {openFields.includes(key) ? <ExpandLess /> : <ExpandMore />}
             </ListItemButton>
             <Collapse in={openFields.includes(key)} timeout="auto" unmountOnExit>
               <Box className='flex gap-3 w-full flex-row mt-5 mb-5 flex-wrap'>
                 <IconButton onClick={() => setValue(v => [...v.filter((_, i) => i < index-1), v[index], v[index-1], ...v.filter((_, i) => i > index)])}><UpIcon/></IconButton>
                 <IconButton onClick={() => setValue(v => [...v.filter((_, i) => i < index), v[index+1], v[index], ...v.filter((_, i) => i > index+1)])}><DownIcon/></IconButton>
+                <IconButton onClick={() => setValue(v => v.filter((_, i) => i !== index))}><ClearIcon/></IconButton>
                 <TextField className='w-full' size='small' label='Field name' value={key} onChange={e => {
                   setValue(updateKey(index, e.target.value))
                   setOpenFields(p => [...p.filter(v => v !== key), e.target.value])
                 }}/>
-                <TextField className='w-full' size='small' label='Display name' value={schema.appearance?.displayName} onChange={e => setValue(updateAppearance(index, a => ({...a, displayName: e.target.value})))} />
+                <TextField className='w-full' size='small' label='Display name' value={schema.appearance.displayName} onChange={e => setValue(updateAppearance(index, a => ({...a, displayName: e.target.value})))} />
                 <Autocomplete
                   size='small'
                   className='w-full'
@@ -148,6 +152,7 @@ export const TableSchemaFormModal: FC<TableSchemaFormModalProps> = ({
                   <Switch checked={schema.appearance?.hide ? true : false} onChange={e => setValue(updateAppearance(index, a => ({...a, hide: e.target.checked})))}/>
                 }/>
                 <TextField className='w-full' size='small' label='Placeholder' value={schema.appearance?.placeholder} onChange={e => setValue(updateAppearance(index, a => ({...a, placeholder: e.target.value})))} />
+                <CellEditor schema={schema} row={{value: schema.default}} label='Default value' column={{key} as any} onClose={() => {}} onRowChange={({value}) => setValue(updateSchema(index, s => ({...s, default: value as string})))} />
                 {['string'].includes(schema.type) && 
                   <TextField className='w-full' size='small' label='Mask (eg. 99/99/9999' value={schema.appearance?.mask} onChange={e => setValue(updateAppearance(index, a => ({...a, mask: e.target.value})))} />
                 }
@@ -177,20 +182,22 @@ export const TableSchemaFormModal: FC<TableSchemaFormModalProps> = ({
                     options={tables}
                     value={schema.reference?.table}
                     onChange={(_, value) => {
-                      setValue(updateReference(index, r => ({...r, table: value ?? r.table})))
+                      setValue(updateReference(index, r => value ? {...r, table: value} : undefined))
                       value && fetchTableSettings(value)
                     }}
                     renderInput={(params) => <TextField {...params} label='Reference table'/>}
                   />
-                  <Autocomplete
-                    size='small'
-                    multiple
-                    className='w-full'
-                    options={Object.keys(tablesSettings[schema.reference?.table ?? '']?.schema ?? {})}
-                    value={schema.reference?.fields}
-                    onChange={(_, value) => setValue(updateReference(index, r => ({...r, fields: [...value ?? []]})))}
-                    renderInput={(params) => <TextField {...params} label='Reference fields'/>}
-                  />
+                  {!!schema.reference?.table &&
+                    <Autocomplete
+                      size='small'
+                      multiple
+                      className='w-full'
+                      options={Object.keys(tablesSettings[schema.reference.table]?.schema ?? {})}
+                      value={schema.reference?.fields}
+                      onChange={(_, value) => setValue(updateReference(index, r => ({...r, fields: [...value ?? []]})))}
+                      renderInput={(params) => <TextField {...params} label='Reference fields'/>}
+                    />
+                  }
                 </>)}
                 <Autocomplete
                   size='small'
@@ -200,6 +207,31 @@ export const TableSchemaFormModal: FC<TableSchemaFormModalProps> = ({
                   onChange={(_, value: any) => setValue(updateSchema(index, r => ({...r, sort: value ?? undefined})))}
                   renderInput={(params) => <TextField {...params} label='Default sorting'/>}
                 />
+                <Autocomplete
+                  size='small'
+                  multiple
+                  freeSolo
+                  className='w-full'
+                  options={[]}
+                  placeholder='Insert the columns names from possiple importing file'
+                  value={schema.import?.columnNames}
+                  onChange={(_, value) => setValue(updateImport(index, i => ({...i, columnNames: [...value]})))}
+                  renderInput={(params) => <TextField {...params} label='Import: Auto mapping column names'/>}
+                />
+                {(schema.type === 'date' || schema.type === 'date-time') && (
+                  <TextField className='w-full' size='small' label='Import: Date format' placeholder='YYYY-MM-DD' value={schema.import?.dateFormat} onChange={e => setValue(updateImport(index, i => ({...i, dateFormat: e.target.value})))} />
+                )}
+                {schema.type === 'reference' && !!schema.reference?.table && <>
+                  <Autocomplete
+                    size='small'
+                    className='w-full'
+                    options={Object.keys(tablesSettings[schema.reference?.table ?? '']?.schema ?? {})}
+                    placeholder='Insert the column name of reference table where value will be searched (regex pattern supported)'
+                    value={schema.import?.searchReferenceColumn}
+                    onChange={(_, value) => setValue(updateImport(index, r => ({...r, searchReferenceColumn: value ?? undefined})))}
+                    renderInput={(params) => <TextField {...params} label='Import: Search regex column'/>}
+                  />
+                </>}
               </Box>
             </Collapse>
           </div>))}
