@@ -1,8 +1,13 @@
 import { MongoClient, Db, ServerApiVersion } from "mongodb"
 import { NextRequest } from "next/server"
 import z from 'zod'
-import fs from 'fs'
-import { randomUUID } from "crypto"
+import jwt, { JwtPayload } from 'jsonwebtoken'
+import CryptoJS from 'crypto-js'
+
+const secret = process.env['COSMON_SECRET'] ?? 'MY_FUCKING_SECRET'
+const issuer = process.env['COSMON_ISSUER'] ?? 'cosmon'
+const audience = process.env['COSMON_AUDIENCE'] ?? 'cusmon'
+const subject = process.env['COSMON_SUBJECT'] ?? 'auth'
 
 export const ConnectData = z.object({
   username: z.string(),
@@ -12,41 +17,16 @@ export const ConnectData = z.object({
 })
 export type ConnectData = z.infer<typeof ConnectData> 
 
-const Connection = z.object({
+const Connection = z.object({ 
   expiry: z.number(),
   connect: ConnectData,
 })
 
 type Connection = z.infer<typeof Connection>
 
-const connections = new Map<string, Connection & {client?: MongoClient}>()
-let _initialized = false
-const init = (): void => {
-  if(!_initialized) {
-    _initialized = true
-    try {
-      const storedRaw = fs.readFileSync('./connections.json', 'utf8')
-      const storedParsed = z.record(z.string(), Connection).safeParse(JSON.parse(storedRaw))
-      if (storedParsed.success) {
-        Object.entries(storedParsed.data).forEach(([token, connection]) => connections.set(token, connection))
-      } else {
-        console.error('ERROR PARSING CONNECTIONS FILE')
-      }
-    } catch(error) {
-      console.log(error)
-    }
-  }
-}
-const flush = (): void => {
-  const data = z.record(z.string(), Connection).parse(Object.fromEntries(Array.from(connections.entries()).map<[string, Connection]>((([token, data]) => [token, {
-    expiry: data.expiry,
-    connect: data.connect,
-  }]))))
-  fs.writeFileSync('./connections.json', JSON.stringify(data))
-  console.log('File updated ./connections.json')
-}
+const connections = new Map<string, MongoClient>()
 
-const createClient = async (connect: ConnectData): Promise<MongoClient> => {
+const createClient = async (token: string, connect: ConnectData): Promise<MongoClient> => {
   const {username, password, server, parameters} = connect
   const uri = `mongodb+srv://${username}:${password}@${server}/?${parameters ?? ''}`
   const client = new MongoClient(uri, {
@@ -58,42 +38,57 @@ const createClient = async (connect: ConnectData): Promise<MongoClient> => {
 
   await client.connect()
 
+  connections.set(token, client)
+
   return client
 }
 
-export const addConnection = async (connect: ConnectData, expiry: number): Promise<string> => {
-  const client = await createClient(connect)
-  await client.connect()
+export const addConnection = async (connect: ConnectData): Promise<string> => {
+  const payload = {data: CryptoJS.AES.encrypt(JSON.stringify(connect), secret).toString()}
+  const token = jwt.sign(payload, secret, {
+    issuer,
+    audience,
+    subject,
+    expiresIn: 1*60*60, // 1h
+  })
   
-  const token = randomUUID()
-  connections.set(token, {connect, expiry, client})
-  flush()
+  await createClient(token, connect)
 
   return token
 }
 
 export const removeConnection = (token: string): void => {
   connections.delete(token)
-  flush()
 }
 
 export const getDb = async (req: NextRequest): Promise<Db|undefined> => {
-  init()
-  
   const token = req.cookies.get('token')?.value
-  if (!token || !connections.has(token)) return undefined
-  
-  let {expiry, client, connect} = connections.get(token) ?? {}
-  if (!connect || !expiry || expiry < +new Date) {
-    connections.delete(token)  
+  if (!token) return undefined
+
+  let payload: JwtPayload
+
+  try {
+    payload = jwt.verify(token, secret, {
+      issuer,
+      audience,
+      subject,
+    }) as JwtPayload
+  } catch(e: unknown) {
+    console.log('Invalid token', e)
+    connections.delete(token)
     return undefined
   }
 
-  if (!client) {
-    client = await createClient(connect)
-    connections.set(token, {expiry, client, connect})
+  if (typeof payload?.data !== 'string') {
+    console.log('Invalid token payload', payload)
+    return undefined
   }
 
+  const data = JSON.parse(CryptoJS.AES.decrypt(payload.data, secret).toString(CryptoJS.enc.Utf8))
+  const connect = ConnectData.parse(data)
+
+  const client = connections.get(token) ?? await createClient(token, connect)
+  
   return client.db('cusmon')
 }
 
