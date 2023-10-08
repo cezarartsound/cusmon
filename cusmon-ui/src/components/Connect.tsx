@@ -5,6 +5,10 @@ import { useUser } from '@/lib/hooks/session/useUser'
 import { Button, TextField } from '@mui/material'
 import { FC, useState } from 'react'
 import { useLogout } from '@/lib/hooks/session/useLogout'
+import { useCookies } from 'react-cookie'
+
+const expiryDate = new Date
+expiryDate.setHours(expiryDate.getHours() + 8)
 
 export const Connect: FC<{
   onConnected: (tables: string[]) => void,
@@ -15,11 +19,12 @@ export const Connect: FC<{
   const [login] = useLogin()
   const [logout] = useLogout()
   const [user] = useUser()
+  const [cookies, setCookie] = useCookies()
 
-  const [username, setUsername] = useState('username')
-  const [password, setPassword] = useState('password')
-  const [server, setServer] = useState('server')
-  const [parameters, setParameters] = useState('retryWrites=true&w=majority')
+  const [username, setUsername] = useState(cookies['USERNAME'] ?? 'cusmon-app')
+  const [password, setPassword] = useState(cookies['PASSWORD'])
+  const [server, setServer] = useState(cookies['SERVER'] ?? 'cluster0.aaaa.mongodb.net')
+  const [parameters, setParameters] = useState(cookies['SERVER_PARAMETERS'] ?? 'retryWrites=true&w=majority')
   
   const [connecting, setConnecting] = useState(false)  
 
@@ -27,7 +32,13 @@ export const Connect: FC<{
       if (!user.loggedIn) {
         setConnecting(true)
         login(username, password, server, parameters)
-          .then(t => t && onConnected(t))
+          .then(t => {
+            t && onConnected(t)
+            setCookie('USERNAME', username)
+            setCookie('PASSWORD', password, {secure: true, expires: expiryDate})
+            setCookie('SERVER', server, {secure: true})
+            setCookie('SERVER_PARAMETERS', parameters)
+          })
           .finally(() => setConnecting(false))
       } else {
         logout()
