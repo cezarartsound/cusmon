@@ -24,6 +24,7 @@ import UpIcon from '@mui/icons-material/ArrowUpward'
 import DownIcon from '@mui/icons-material/ArrowDownward'
 import ClearIcon from '@mui/icons-material/Clear'
 import { CellEditor } from './CellEditor'
+import { Item } from './types'
 
 type Entry = [string, FieldSchema]
 
@@ -77,12 +78,14 @@ const getTypeColor = (type: FieldType): string => {
 
 export const TableSchemaFormModal: FC<{
   tables: string[]
+  tablesData: Record<string, Item[]>
   open: boolean
   value: TableSchema
   onSave: (newValue: TableSchema) => void
   onClose: () => void
 }> = ({
   tables,
+  tablesData,
   open,
   value,
   onSave,
@@ -152,7 +155,7 @@ export const TableSchemaFormModal: FC<{
                   <Switch checked={schema.appearance?.hide ? true : false} onChange={e => setValue(updateAppearance(index, a => ({...a, hide: e.target.checked})))}/>
                 }/>
                 <TextField className='w-full' size='small' label='Placeholder' value={schema.appearance?.placeholder} onChange={e => setValue(updateAppearance(index, a => ({...a, placeholder: e.target.value})))} />
-                <CellEditor schema={schema} row={{value: schema.default}} label='Default value' column={{key} as any} onClose={() => {}} onRowChange={({value}) => setValue(updateSchema(index, s => ({...s, default: value as string})))} />
+                <CellEditor schema={schema} row={{_id: '', value: schema.default}} value={schema.default} refTablesData={tablesData} label='Default value' field={key} onRowChange={({value}) => setValue(updateSchema(index, s => ({...s, default: value as string})))} />
                 {['string'].includes(schema.type) && 
                   <TextField className='w-full' size='small' label='Mask (eg. 99/99/9999' value={schema.appearance?.mask} onChange={e => setValue(updateAppearance(index, a => ({...a, mask: e.target.value})))} />
                 }
@@ -199,6 +202,7 @@ export const TableSchemaFormModal: FC<{
                     />
                   }
                 </>)}
+                <TextField type='number' className='w-full' size='small' label='Column preferred width (px)' value={schema.appearance.preferredWidth} onChange={e => setValue(updateAppearance(index, i => ({...i, preferredWidth: Number(e.target.value)})))} />
                 <Autocomplete
                   size='small'
                   className='w-full'

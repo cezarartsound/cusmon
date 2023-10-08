@@ -4,6 +4,8 @@ import z from 'zod'
 import jwt, { JwtPayload } from 'jsonwebtoken'
 import CryptoJS from 'crypto-js'
 
+export const TOKEN_EXPIRY_SEC = 1*60*60 // 1 hour
+
 const secret = process.env['COSMON_SECRET'] ?? 'MY_FUCKING_SECRET'
 const issuer = process.env['COSMON_ISSUER'] ?? 'cosmon'
 const audience = process.env['COSMON_AUDIENCE'] ?? 'cusmon'
@@ -49,7 +51,7 @@ export const addConnection = async (connect: ConnectData): Promise<string> => {
     issuer,
     audience,
     subject,
-    expiresIn: 1*60*60, // 1h
+    expiresIn: TOKEN_EXPIRY_SEC,
   })
   
   await createClient(token, connect)

@@ -8,28 +8,33 @@ import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
 import { CellEditor } from './CellEditor'
 import { v4 as uuid } from 'uuid'
+import { Item } from './types'
 
 export const NewItemFormModal: FC<{
   tableSchema: TableSchema,
+  refTablesData: Record<string, Item[]>
   readOnly: boolean,
   open: boolean,
-  onSave: (item: Record<string, unknown>) => void,
+  onSave: (item: Item) => void,
   onClose: () => void,
 }> = ({
   tableSchema,
+  refTablesData,
   readOnly,
   open,
   onSave,
   onClose,
 }) => {
-  const [currValue, setValue] = useState<Record<string, unknown>>({})
+  const [currValue, setValue] = useState<Item>({_id: uuid()})
 
   useEffect(() => {
-    setValue({
+    const val = {
+      ...Object.fromEntries(Object.entries(tableSchema).map(([key, schema]) => [key, schema.default]).filter(([_, v]) => !!v)),
       _id: uuid(),
-      ...Object.fromEntries(Object.entries(tableSchema).map(([key, schema]) => [key, schema.default]))
-    })
-  }, [open])
+    }
+    console.log(val)
+    setValue(val)
+  }, [open, tableSchema])
   
   return (
     <Modal
@@ -42,7 +47,7 @@ export const NewItemFormModal: FC<{
         <Box className='flex gap-3 w-full flex-row mt-5 mb-5 flex-wrap'>
           {Object.entries(tableSchema).map(([key, schema]) => (<>
             <Typography>{schema.appearance.displayName}</Typography>
-            <CellEditor schema={schema} row={currValue} column={{key} as any} onClose={() => {}} onRowChange={setValue} />
+            <CellEditor schema={schema} row={currValue} value={currValue[key]} refTablesData={refTablesData} field={key} onRowChange={setValue} />
           </>))}
         </Box>
         <hr/>

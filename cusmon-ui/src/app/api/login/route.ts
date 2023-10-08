@@ -1,8 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server'
 import z from 'zod'
-import { ConnectData, addConnection, getDb, removeConnection } from '../connections'
-
-const TOKEN_EXPIRY_SEC = 1*60*60 // 1 hour
+import { ConnectData, TOKEN_EXPIRY_SEC, addConnection, getDb, removeConnection } from '../connections'
 
 export interface Connected {
   token: string
@@ -10,13 +8,15 @@ export interface Connected {
   tables: string[]
 }
 
+export type Connect = ConnectData
+
 export async function POST(req: NextRequest) {
   const parsed = ConnectData.safeParse(await req.json())
   if (!parsed.success) return NextResponse.json(null, {status: 400})
 
   const expiry = +new Date + TOKEN_EXPIRY_SEC*1000
 
-  const token = await addConnection(parsed.data, expiry)
+  const token = await addConnection(parsed.data)
 
   const prevToken = req.cookies.get('token')?.value
   if (prevToken) removeConnection(prevToken)

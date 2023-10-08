@@ -16,6 +16,7 @@ const FieldSchema = z.object({
     placeholder: z.string().optional(),
     mask: z.string().optional(),
     hide: z.boolean().optional(),
+    preferredWidth: z.number().optional(),
   }),
   validations: z.object({
     options: z.array(z.string()).optional(),

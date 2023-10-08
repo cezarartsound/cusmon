@@ -1,7 +1,7 @@
 'use client'
 import { FieldSchema, TableSchema } from '@/app/api/db/[tableName]/route'
 import 'react'
-import { FC, useEffect, useState } from 'react'
+import { FC, Fragment, useEffect, useState } from 'react'
 import Modal from '@mui/material/Modal'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -13,6 +13,8 @@ import { CellEditor } from './CellEditor'
 import sha256 from 'crypto-js/sha256'
 import dayjs from 'dayjs'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
+import { Item } from './types'
+import { v4 as uuid } from 'uuid'
 
 dayjs.extend(customParseFormat)
 
@@ -64,7 +66,7 @@ function* getData(table: any[][], row: number, col: number, nrCols: number): Gen
   }
 }
 
-const mapValue = (value: any, schema: FieldSchema, refTableData?: Record<string, unknown>[]): string|number|undefined => {
+const mapValue = (value: any, schema: FieldSchema, refTableData?: Item[]): string|number|undefined => {
   switch (schema.type) {
     case 'date':
     case 'date-time':
@@ -83,10 +85,10 @@ const advancedAutoFillOptions: AdvancedAutoFill[] = ['InputRowHash']
 
 export const ImportFileModal: FC<{
   tableSchema: TableSchema,
-  refTablesData: Record<string, Record<string, unknown>[]>, 
+  refTablesData: Record<string, Item[]>, 
   readOnly: boolean,
   open: boolean,
-  onSave: (items: Record<string, unknown>[]) => void,
+  onSave: (items: Item[]) => void,
   onClose: () => void,
 }> = ({
   tableSchema,
@@ -97,7 +99,7 @@ export const ImportFileModal: FC<{
   onClose,
 }) => {
   const [loading, setLoading] = useState<boolean>(false)
-  const [items, setItems] = useState<Record<string, unknown>[]>([])
+  const [items, setItems] = useState<Item[]>([])
   const [fileName, setFileName] = useState<string|undefined>(undefined)
   const [fileContent, setFileContent] = useState<{name: string, data: any[][]}[]>([])
   const [selectedSheet, setSelectedSheet] = useState<{name: string, data: any[][]}>()
@@ -163,12 +165,12 @@ export const ImportFileModal: FC<{
     onClose()
   }
   
-  const importData = (totalItems?: number): Promise<Record<string, unknown>[]> => {
+  const importData = (totalItems?: number): Promise<Item[]> => {
     if (!selectedSheet || !columnsFound) return Promise.resolve([])
     
     setLoading(true)
 
-    return new Promise<Record<string, unknown>[]>(resolve => {
+    return new Promise<Item[]>(resolve => {
       const {firstRow, firstCol, names} = columnsFound
 
       const inputTable = getData(selectedSheet.data, firstRow, firstCol, names.length)
@@ -199,6 +201,7 @@ export const ImportFileModal: FC<{
           }))
 
         return {
+          _id: uuid(),
           ...fromMapping,
           ...fromAutoFillBasic,
           ...fromAutoFillAdvanced,
@@ -253,7 +256,7 @@ export const ImportFileModal: FC<{
           {!!selectedSheet && !!columnsFound && <>
             <hr/>
             <Typography variant='h5'>Mapping</Typography>
-            {columnsFound.names.map((columnName, colIndex) => (<div className='flex gap-2'>
+            {columnsFound.names.map((columnName, colIndex) => (<div key={columnName} className='flex gap-2'>
               <div className='w-1/3'>
                 <Typography>{columnName}</Typography>
                 <Typography className='text-gray-400 text-ellipsis whitespace-nowrap overflow-hidden' variant='subtitle2'>
@@ -282,10 +285,10 @@ export const ImportFileModal: FC<{
             {
               Object.entries(tableSchema)
                 .filter(([key]) => !Object.values(mapping).flat().includes(key))
-                .map(([key, schema]) => (<div className='flex gap-2'>
+                .map(([key, schema]) => (<div key={key} className='flex gap-2'>
                   <Typography className='w-1/3'>{schema.appearance.displayName}</Typography>
                   {!advancedAutoFill[key]
-                    ? <CellEditor schema={schema} row={autoFill} column={{key} as any} onClose={() => {}} onRowChange={v => setAutoFill(a => ({...a, [key]: v[key]}))}/>
+                    ? <CellEditor schema={schema} row={autoFill as Item} value={autoFill[key]} refTablesData={refTablesData} field={key} onRowChange={v => setAutoFill(a => ({...a, [key]: v[key]}))}/>
                     : <Autocomplete 
                         className='w-full'
                         size='small'
@@ -307,12 +310,12 @@ export const ImportFileModal: FC<{
 
             {!!items.length && 
               items.map(item => (
-                <div>
+                <div key={item._id}>
                   { 
-                    Object.entries(tableSchema).map(([key, schema]) => (<>
+                    Object.entries(tableSchema).map(([key, schema]) => (<Fragment key={key}>
                       <Typography className='w-1/3'>{schema.appearance.displayName}</Typography>
-                      <CellEditor readOnly={true} schema={schema} row={item} column={{key} as any} onClose={() => {}} onRowChange={v => setAutoFill(a => ({...a, [key]: v[key]}))}/>
-                    </>))
+                      <CellEditor readOnly={true} schema={schema} row={item} value={item[key]} refTablesData={refTablesData} field={key} onRowChange={v => setAutoFill(a => ({...a, [key]: v[key]}))}/>
+                    </Fragment>))
                   } 
                 </div>
               ))
