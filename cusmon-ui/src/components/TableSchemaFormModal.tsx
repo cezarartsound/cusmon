@@ -19,12 +19,13 @@ import { ExpandLess, ExpandMore } from '@mui/icons-material'
 import Avatar from '@mui/material/Avatar'
 import { green, orange, blue, red, grey } from '@mui/material/colors'
 import Tooltip from '@mui/material/Tooltip'
-import { IconButton } from '@mui/material'
+import { Chip, IconButton } from '@mui/material'
 import UpIcon from '@mui/icons-material/ArrowUpward'
 import DownIcon from '@mui/icons-material/ArrowDownward'
 import ClearIcon from '@mui/icons-material/Clear'
-import { CellEditor } from './CellEditor'
+import { CellEditor, stringToColour } from './CellEditor'
 import { Item } from './types'
+import { useFetch } from './AlertProvider'
 
 type Entry = [string, FieldSchema]
 
@@ -94,6 +95,7 @@ export const TableSchemaFormModal: FC<{
   const [currValue, setValue] = useState<Entry[]>(Object.entries(value))
   const [tablesSettings, setTablesSettings] = useState<Record<string, TableSettings>>({})
   const [openFields, setOpenFields] = useState<string[]>([])
+  const {fetch} = useFetch()
 
   useEffect(() => setValue(Object.entries(value)), [value])
 
@@ -155,7 +157,7 @@ export const TableSchemaFormModal: FC<{
                   <Switch checked={schema.appearance?.hide ? true : false} onChange={e => setValue(updateAppearance(index, a => ({...a, hide: e.target.checked})))}/>
                 }/>
                 <TextField className='w-full' size='small' label='Placeholder' value={schema.appearance?.placeholder} onChange={e => setValue(updateAppearance(index, a => ({...a, placeholder: e.target.value})))} />
-                <CellEditor schema={schema} row={{_id: '', value: schema.default}} value={schema.default} refTablesData={tablesData} label='Default value' field={key} onRowChange={({value}) => setValue(updateSchema(index, s => ({...s, default: value as string})))} />
+                <CellEditor schema={schema} row={{_id: '', value: schema.default}} value={schema.default} refTablesData={tablesData} label='Default value' field='value' onRowChange={({value}) => setValue(updateSchema(index, s => ({...s, default: value})))} />
                 {['string'].includes(schema.type) && 
                   <TextField className='w-full' size='small' label='Mask (eg. 99/99/9999' value={schema.appearance?.mask} onChange={e => setValue(updateAppearance(index, a => ({...a, mask: e.target.value})))} />
                 }
@@ -172,7 +174,18 @@ export const TableSchemaFormModal: FC<{
                     options={[]}
                     value={schema.validations?.options}
                     onChange={(_, value) => setValue(updateValidations(index, r => ({...r, options: [...value ?? []]})))}
-                    renderInput={(params) => <TextField {...params} label='Options'/>}
+                    renderInput={(params) => <TextField {...params} label='Options'/>}    
+                    renderTags={(value, getTagProps) =>
+                      value.map((v, index) => (
+                        <Chip
+                          style={stringToColour(v as string)} 
+                          variant='filled'
+                          label={v as string}
+                          size='small'
+                          {...getTagProps({ index })}
+                        />
+                      ))
+                    }
                   />
                   <FormControlLabel label="Multiple" control={
                     <Switch checked={schema.validations?.multiple ? true : false} onChange={e => setValue(updateValidations(index, s => ({...s, multiple: e.target.checked})))}/>

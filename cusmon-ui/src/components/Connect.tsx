@@ -29,6 +29,7 @@ export const Connect: FC<{
   const [connecting, setConnecting] = useState(false)  
 
   const onClick = async () => {
+    
       if (!user.loggedIn) {
         setConnecting(true)
         login(username, password, server, parameters)

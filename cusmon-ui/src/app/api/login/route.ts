@@ -15,8 +15,14 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json(null, {status: 400})
 
   const expiry = +new Date + TOKEN_EXPIRY_SEC*1000
+  let token: string
 
-  const token = await addConnection(parsed.data)
+  try {
+    token = await addConnection(parsed.data)
+  }
+  catch(e) {
+    return NextResponse.json(null, {status: 400})
+  }
 
   const prevToken = req.cookies.get('token')?.value
   if (prevToken) removeConnection(prevToken)

@@ -1,10 +1,10 @@
 import { FieldSchema } from "@/app/api/db/[tableName]/route"
-import { TextFieldProps, TextField, Autocomplete } from "@mui/material"
-import { FC, useLayoutEffect, useMemo, useRef } from "react"
+import { TextFieldProps, TextField, Autocomplete, Chip } from "@mui/material"
+import { FC, useMemo } from "react"
 import InputMask from 'react-input-mask'
 import { Item } from "./types"
 import { GridRenderEditCellParams, useGridApiContext } from "@mui/x-data-grid"
-import { v4 as uuid } from 'uuid'
+import { CSSProperties } from "@mui/material/styles/createMixins"
 
 
 const MaskedInput: FC<TextFieldProps & {mask?: string}> = (props) => {
@@ -19,8 +19,40 @@ const MaskedInput: FC<TextFieldProps & {mask?: string}> = (props) => {
     >
       {((inputProps: any) => <TextField {...inputProps} {...remmaning}/>) as any}
     </InputMask>
-
   )
+}
+
+const parseValue = (value: Item[0], schema: FieldSchema): Item[0] => {
+  const unboxed = Array.isArray(value) ? value[0] : value
+  switch (schema.type) {
+    case 'currency':
+    case 'decimal':
+    case 'integer':
+      return typeof unboxed === 'number' ? unboxed
+        : typeof unboxed === 'string' ? Number(unboxed)
+        : undefined
+    case 'select': 
+      if (schema.validations?.multiple) {
+        if (!value) return []
+        return Array.isArray(value) ? value : [value.toString()]
+      }
+    default: 
+      return typeof unboxed === 'string' ? unboxed : unboxed?.toString()
+  }
+} 
+
+export const stringToColour = (str: string): Pick<CSSProperties, 'color'|'backgroundColor'> => {
+  let hash = 0;
+  str.split('').forEach(char => {
+    hash = char.charCodeAt(0) + ((hash << 5) - hash)
+  })
+  const rgb = [0, 0, 0].map((_, i) => (hash >> (i * 8)) & 0xff)
+  const luma = ((0.299 * rgb[0]) + (0.587 * rgb[1]) + (0.114 * rgb[2])) / 0xff;
+
+  return {
+    backgroundColor: `#${rgb.map(v => v.toString(16).padStart(2, '0')).join('')}`,
+    color: luma > 0.5 ? '#000': '#FFF'
+  }
 }
 
 export const CellEditor: FC<{
@@ -31,7 +63,7 @@ export const CellEditor: FC<{
   refTablesData: Record<string, Item[]>,
   readOnly?: boolean, 
   label?: string,
-} & Partial<GridRenderEditCellParams<Item, unknown>>> = ({
+} & Partial<GridRenderEditCellParams<Item, Item[0]>>> = ({
   label,
   refTablesData,
   schema,
@@ -40,34 +72,25 @@ export const CellEditor: FC<{
   field,
   id,
   readOnly,
-  hasFocus,
   onRowChange,
 }) => {
   // eslint-disable-next-line react-hooks/rules-of-hooks -- id never changes to this is safe
   const apiRef = id ? useGridApiContext() : undefined
-  const ref = useRef<HTMLDivElement>(null)
 
-  useLayoutEffect(() => {
-    if (hasFocus) {
-      ref.current?.focus()
-    }
-  }, [hasFocus])
-
-  const onChange = (newValue: string|string[]|number|undefined) => {
+  const onChange = (newValue: Item[0]) => {
     apiRef?.current.setEditCellValue({ id: id!, field, value: newValue })
     onRowChange && onRowChange({...row, [field]: newValue})
   };
 
-  const base: Partial<TextFieldProps & {mask?: string}> = { 
+  const base: Partial<Pick<TextFieldProps, 'className'|'size'|'label'|'placeholder'|'disabled'|'value'|'onChange'> & {mask?: string}> = { 
     className: 'w-full',
     size: 'small',
     label,
-    ref,
     placeholder: schema.appearance.placeholder,
     mask: schema.appearance.mask,
-    value,
     disabled: readOnly,
-    onChange: e => onChange(e.target.value),
+    value: parseValue(value, schema),
+    onChange: e => onChange(parseValue(e.target.value, schema)),
   } 
 
   const referenceOptionsById: Record<string, string> = useMemo(() => {
@@ -117,24 +140,31 @@ export const CellEditor: FC<{
       />)
     case 'select': 
       return <Autocomplete
-        className='w-full'
-        size='small'
-        placeholder={schema.appearance.placeholder}
-        value={value as string|string[]}
+        {...base}
+        value={parseValue(value, schema) ?? [] as any}
         onChange={(_, option) => onChange(option as string[])}
         multiple={schema.validations?.multiple}
         options={schema.validations?.options ?? []}
-        renderInput={(params) => <TextField {...params} disabled={readOnly} label={label} />}
+        renderInput={(params) => <TextField {...base} {...params} />}
+        renderTags={(value, getTagProps) =>
+          value.map((v, index) => (
+            <Chip
+              style={stringToColour(v as string)} 
+              variant='filled'
+              label={v}
+              size='small'
+              {...getTagProps({ index })}
+            />
+          ))
+        }
       />
     case 'reference':
       return (<Autocomplete
-        className='w-full'
-        size='small'
-        placeholder={schema.appearance.placeholder}
+        {...base}
         value={value ? referenceOptionsById[value as string] : undefined}
         onChange={(_, option) => onChange(option ? referenceOptionsIds[option] : undefined)}
         options={Object.values(referenceOptionsById)}
-        renderInput={(params) => <TextField {...params} disabled={readOnly} label={label} />}
+        renderInput={(params) => <TextField {...base} {...params}/>}
       />)
     case 'string': 
       return (<MaskedInput 

@@ -1,8 +1,11 @@
 import { Connect, Connected } from "@/app/api/login/route"
+import { useFetch } from "@/components/AlertProvider"
 import { useCookies } from "react-cookie"
 
 export const useLogin = () => {
   const [_, setCookie, removeCookie] = useCookies(['token'])
+  const {fetch} = useFetch()
+
 
   const login = async (username: string, password: string, server: string, parameters?: string) => {
     const payload: Connect = {username, password, server, parameters}

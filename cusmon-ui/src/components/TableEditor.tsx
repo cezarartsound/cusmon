@@ -16,15 +16,16 @@ import RepartitionIcon from '@mui/icons-material/Repartition'
 import { NewItemFormModal } from './NewItemFormModal'
 import { ImportFileModal } from './ImportFileModal'
 import { Item } from './types'
-import { CellEditor } from './CellEditor'
+import { CellEditor, stringToColour } from './CellEditor'
 import { GridInitialStateCommunity } from '@mui/x-data-grid/models/gridStateCommunity'
 import dayjs from 'dayjs'
+import { useFetch } from './AlertProvider'
 
 const cellEditor = (
   schema: FieldSchema, 
   tables: Record<string, Item[]>,
-): FC<GridRenderEditCellParams<Item, Item>> => {
-  const inner: FC<GridRenderEditCellParams<Item, Item>> = 
+): FC<GridRenderEditCellParams<Item, Item[0]>> => {
+  const inner: FC<GridRenderEditCellParams<Item, Item[0]>> = 
     (props) => <CellEditor schema={schema} refTablesData={tables} {...props}/>
   return inner
 }
@@ -50,7 +51,7 @@ const cellViewer = (
         return <Typography className={classes}>{refValues.length ? refValues.join(', ') : raw?.toString()}</Typography>
       case 'select': 
         if (schema.validations?.multiple) {
-          return (raw as string[])?.map(val => <Chip size='small' key={val} label={val}/>)
+          return (raw as string[])?.map(val => <Chip style={stringToColour(val)} variant='filled' size='small' key={val} label={val}/>)
         }
       default:
         return <Typography className={classes}>{raw?.toString()}</Typography>
@@ -80,6 +81,7 @@ export const TableEditor: FC<{
   const [actionsMenuAnchor, setActionsMenuAnchor] = useState<null | HTMLElement>(null)
   const [addingNew, setAddingNew] = useState<boolean>(false)
   const [importingFile, setImportingFile] = useState<boolean>(false)
+  const {fetch} = useFetch()
 
   const setTableSettings = (settings: TableSettings) => {
     _setTableSettings(settings)

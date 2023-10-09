@@ -39,3 +39,14 @@ export async function DELETE(req: NextRequest) {
 
   return NextResponse.json(null)
 }
+
+export async function GET(req: NextRequest) {
+  const db = await getDb(req)
+  if (!db) return NextResponse.json(null, {status: 403})
+  
+  const collections = (await db?.collections())?.map(c => c.collectionName) ?? []
+
+  const filtered = collections.filter(t => !t.startsWith('_'))
+
+  return NextResponse.json({tables: filtered}, { status: 200 })
+}

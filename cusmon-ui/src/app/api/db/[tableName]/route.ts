@@ -10,7 +10,7 @@ const FieldType = z.enum(['string', 'select', 'decimal', 'integer', 'currency', 
 const FieldSchema = z.object({
   type: FieldType,
   editable: z.boolean().optional(),
-  default: z.string().optional(),
+  default: z.union([z.string(), z.number(), z.null(), z.array(z.string())]).optional(),
   appearance: z.object({
     displayName: z.string(),
     placeholder: z.string().optional(),
