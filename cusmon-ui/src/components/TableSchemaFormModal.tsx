@@ -61,6 +61,7 @@ const typeOptions: {id: FieldType, label: string}[] = [
   {id: 'time', label: 'Time'},
   {id: 'date-time', label: 'Date Time'},
   {id: 'reference', label: 'Reference'},
+  {id: 'copy', label: 'Copy from reference'},
 ]
 
 const getTypeColor = (type: FieldType): string => {
@@ -74,12 +75,14 @@ const getTypeColor = (type: FieldType): string => {
     case 'decimal': return blue[600]
     case 'currency': return orange[500]
     case 'reference': return red[600]
+    case 'copy': return red[900]
   }
 }
 
 export const TableSchemaFormModal: FC<{
   tables: string[]
   tablesData: Record<string, Item[]>
+  tablesSettings: Record<string, TableSettings>
   open: boolean
   value: TableSchema
   onSave: (newValue: TableSchema) => void
@@ -87,17 +90,20 @@ export const TableSchemaFormModal: FC<{
 }> = ({
   tables,
   tablesData,
+  tablesSettings: initialTablesSettings,
   open,
   value,
   onSave,
   onClose,
 }) => {
   const [currValue, setValue] = useState<Entry[]>(Object.entries(value))
-  const [tablesSettings, setTablesSettings] = useState<Record<string, TableSettings>>({})
+  const [tablesSettings, setTablesSettings] = useState<Record<string, TableSettings>>(initialTablesSettings)
   const [openFields, setOpenFields] = useState<string[]>([])
   const {fetch} = useFetch()
 
   useEffect(() => setValue(Object.entries(value)), [value])
+
+  useEffect(() => setTablesSettings(r => ({...r, ...initialTablesSettings})), [initialTablesSettings])
 
   const fetchTableSettings = (tableName: string) => {
     if (tablesSettings[tableName]) return 
@@ -112,6 +118,8 @@ export const TableSchemaFormModal: FC<{
       })
       .catch(() => setTablesSettings(({[tableName]: a, ...rest}) => rest))
   }
+
+  const referenceColumns = currValue.filter(([_, schema]) => schema.type === 'reference')
 
   return (
     <Modal
@@ -157,7 +165,17 @@ export const TableSchemaFormModal: FC<{
                   <Switch checked={schema.appearance?.hide ? true : false} onChange={e => setValue(updateAppearance(index, a => ({...a, hide: e.target.checked})))}/>
                 }/>
                 <TextField className='w-full' size='small' label='Placeholder' value={schema.appearance?.placeholder} onChange={e => setValue(updateAppearance(index, a => ({...a, placeholder: e.target.value})))} />
-                <CellEditor schema={schema} row={{_id: '', value: schema.default}} value={schema.default} refTablesData={tablesData} label='Default value' field='value' onRowChange={({value}) => setValue(updateSchema(index, s => ({...s, default: value})))} />
+                <CellEditor 
+                  schema={schema}
+                  tableSchema={Object.fromEntries(currValue)} 
+                  row={{_id: '', [key]: schema.default}} 
+                  value={schema.default} 
+                  refTablesData={tablesData} 
+                  refTablesSettings={tablesSettings} 
+                  label='Default value' 
+                  field={key}
+                  onRowChange={(row) => setValue(updateSchema(index, s => ({...s, default: row[key]})))} 
+                />
                 {['string'].includes(schema.type) && 
                   <TextField className='w-full' size='small' label='Mask (eg. 99/99/9999' value={schema.appearance?.mask} onChange={e => setValue(updateAppearance(index, a => ({...a, mask: e.target.value})))} />
                 }
@@ -215,6 +233,29 @@ export const TableSchemaFormModal: FC<{
                     />
                   }
                 </>)}
+                {schema.type === 'copy' && (<>
+                  <Autocomplete
+                    size='small'
+                    className='w-full'
+                    options={tables}
+                    value={schema.reference?.table}
+                    onChange={(_, value) => {
+                      setValue(updateReference(index, r => value ? {...r, table: value} : undefined))
+                      value && fetchTableSettings(value)
+                    }}
+                    renderInput={(params) => <TextField {...params} label='Table to copy from'/>}
+                  />
+                  {!!schema.reference?.table &&
+                    <Autocomplete
+                      size='small'
+                      className='w-full'
+                      options={Object.keys(tablesSettings[schema.reference.table]?.schema ?? {})}
+                      value={schema.reference?.fields?.[0]}
+                      onChange={(_, value) => setValue(updateReference(index, r => ({...r, fields: value ? [value] : []})))}
+                      renderInput={(params) => <TextField {...params} label='Field to copy'/>}
+                    />
+                  }
+                </>)}
                 <TextField type='number' className='w-full' size='small' label='Column preferred width (px)' value={schema.appearance.preferredWidth} onChange={e => setValue(updateAppearance(index, i => ({...i, preferredWidth: Number(e.target.value)})))} />
                 <Autocomplete
                   size='small'
@@ -247,6 +288,17 @@ export const TableSchemaFormModal: FC<{
                     value={schema.import?.searchReferenceColumn}
                     onChange={(_, value) => setValue(updateImport(index, r => ({...r, searchReferenceColumn: value ?? undefined})))}
                     renderInput={(params) => <TextField {...params} label='Import: Search regex column'/>}
+                  />
+                </>}
+                {schema.type === 'copy' && !!referenceColumns.length && <>
+                  <Autocomplete
+                    size='small'
+                    className='w-full'
+                    options={referenceColumns.map(([_, s]) => s.appearance.displayName)}
+                    placeholder='Insert the column name of type reference from where this column will be copied from'
+                    value={referenceColumns.find(([k]) => k === schema.import?.copyFromReference)?.[1].appearance.displayName}
+                    onChange={(_, value) => setValue(updateImport(index, r => ({...r, copyFromReference: referenceColumns.find(([k, s]) => s.appearance.displayName === value)?.[0]})))}
+                    renderInput={(params) => <TextField {...params} label='Import: Copy from reference column'/>}
                   />
                 </>}
               </Box>

@@ -1,5 +1,5 @@
 'use client'
-import { FieldSchema, TableSchema } from '@/app/api/db/[tableName]/route'
+import { FieldSchema, TableSchema, TableSettings } from '@/app/api/db/[tableName]/route'
 import 'react'
 import { FC, Fragment, useEffect, useState } from 'react'
 import Modal from '@mui/material/Modal'
@@ -86,6 +86,7 @@ const advancedAutoFillOptions: AdvancedAutoFill[] = ['InputRowHash']
 export const ImportFileModal: FC<{
   tableSchema: TableSchema,
   refTablesData: Record<string, Item[]>, 
+  refTablesSettings: Record<string, TableSettings>,
   readOnly: boolean,
   open: boolean,
   onSave: (items: Item[]) => void,
@@ -93,6 +94,7 @@ export const ImportFileModal: FC<{
 }> = ({
   tableSchema,
   refTablesData,
+  refTablesSettings,
   readOnly,
   open,
   onSave,
@@ -200,11 +202,27 @@ export const ImportFileModal: FC<{
             }
           }))
 
-        return {
+        const value: Item = {
           _id: uuid(),
           ...fromMapping,
           ...fromAutoFillBasic,
           ...fromAutoFillAdvanced,
+        }
+
+        const fromCopy = Object.fromEntries(Object.entries(tableSchema)
+          .filter(([_, s]) => s.type === 'copy' && s.import?.copyFromReference)
+          .map(([k, schema]) => {
+            const refTable = schema.reference?.table
+            const refField = schema.reference?.fields?.[0]
+            const refRow = refTable && refTablesData[refTable]
+              ?.find(i => schema.import?.copyFromReference && i._id === value[schema.import.copyFromReference]) || undefined
+            const refValue = refRow && refField && refRow[refField] || undefined
+            return [k, refValue]
+          }))
+
+        return {
+          ...fromCopy,
+          ...value,
         }
       })
 
@@ -288,7 +306,16 @@ export const ImportFileModal: FC<{
                 .map(([key, schema]) => (<div key={key} className='flex gap-2'>
                   <Typography className='w-1/3'>{schema.appearance.displayName}</Typography>
                   {!advancedAutoFill[key]
-                    ? <CellEditor schema={schema} row={autoFill as Item} value={autoFill[key]} refTablesData={refTablesData} field={key} onRowChange={v => setAutoFill(a => ({...a, [key]: v[key]}))}/>
+                    ? <CellEditor 
+                        schema={schema}
+                        tableSchema={tableSchema} 
+                        field={key} 
+                        value={autoFill[key]} 
+                        row={autoFill as Item} 
+                        refTablesData={refTablesData}
+                        refTablesSettings={refTablesSettings} 
+                        onRowChange={v => setAutoFill(a => ({...a, [key]: v[key]}))}
+                      />
                     : <Autocomplete 
                         className='w-full'
                         size='small'
@@ -314,7 +341,17 @@ export const ImportFileModal: FC<{
                   { 
                     Object.entries(tableSchema).map(([key, schema]) => (<Fragment key={key}>
                       <Typography className='w-1/3'>{schema.appearance.displayName}</Typography>
-                      <CellEditor readOnly={true} schema={schema} row={item} value={item[key]} refTablesData={refTablesData} field={key} onRowChange={v => setAutoFill(a => ({...a, [key]: v[key]}))}/>
+                      <CellEditor 
+                        readOnly={true} 
+                        schema={schema}
+                        tableSchema={tableSchema} 
+                        field={key} 
+                        value={item[key]} 
+                        row={item} 
+                        refTablesData={refTablesData} 
+                        refTablesSettings={refTablesSettings}
+                        onRowChange={v => setAutoFill(a => ({...a, [key]: v[key]}))}
+                      />
                     </Fragment>))
                   } 
                 </div>

@@ -1,5 +1,5 @@
-import { FieldSchema } from "@/app/api/db/[tableName]/route"
-import { TextFieldProps, TextField, Autocomplete, Chip } from "@mui/material"
+import { FieldSchema, TableSchema, TableSettings } from "@/app/api/db/[tableName]/route"
+import { TextFieldProps, TextField, Autocomplete, Chip, CircularProgress } from "@mui/material"
 import { FC, useMemo } from "react"
 import InputMask from 'react-input-mask'
 import { Item } from "./types"
@@ -58,28 +58,58 @@ export const stringToColour = (str: string): Pick<CSSProperties, 'color'|'backgr
 export const CellEditor: FC<{
   field: string, 
   schema: FieldSchema,
+  tableSchema: TableSchema,
   row: Item,
   onRowChange?: (item: Item) => void,
   refTablesData: Record<string, Item[]>,
+  refTablesSettings: Record<string, TableSettings>,
   readOnly?: boolean, 
   label?: string,
-} & Partial<GridRenderEditCellParams<Item, Item[0]>>> = ({
-  label,
-  refTablesData,
-  schema,
-  value,
-  row,
-  field,
-  id,
-  readOnly,
-  onRowChange,
-}) => {
+} & Partial<GridRenderEditCellParams<Item, Item[0]>>> = (props) => {
+
+  const {
+    label,
+    refTablesData,
+    refTablesSettings,
+    schema,
+    tableSchema,
+    value,
+    row,
+    field,
+    id,
+    readOnly,
+    onRowChange,
+  } = props
+
+  if (schema.type === 'copy') {
+    const refTableSchema = schema.reference?.table && refTablesSettings[schema.reference.table]?.schema
+    const refColumnSchema = refTableSchema && schema.reference?.fields?.[0] && refTableSchema[schema.reference.fields[0]]
+    if (!refColumnSchema) return <CircularProgress />
+    return <CellEditor {...props} schema={refColumnSchema} />
+  }
+
   // eslint-disable-next-line react-hooks/rules-of-hooks -- id never changes to this is safe
   const apiRef = id ? useGridApiContext() : undefined
 
   const onChange = (newValue: Item[0]) => {
+
+    let newRow = {...row, [field]: newValue}
+
+    if (tableSchema[field].type === 'reference') {
+      // Find columns which should be copied from this reference
+      const dependants = Object.entries(tableSchema).filter(([_, s]) => s.import?.copyFromReference === field)
+
+      for(let [key, schema] of dependants) {
+        const refTable = schema.reference?.table
+        const refField = schema.reference?.fields?.[0]
+        const refRow = refTable && refTablesData[refTable]?.find(i => i._id === newValue) || undefined
+        const refValue = refRow && refField && refRow[refField] || undefined
+        if (refValue) newRow = {...newRow, [key]: refValue}
+      }
+    }
+
     apiRef?.current.setEditCellValue({ id: id!, field, value: newValue })
-    onRowChange && onRowChange({...row, [field]: newValue})
+    onRowChange && onRowChange(newRow)
   };
 
   const base: Partial<Pick<TextFieldProps, 'className'|'size'|'label'|'placeholder'|'disabled'|'value'|'onChange'> & {mask?: string}> = { 

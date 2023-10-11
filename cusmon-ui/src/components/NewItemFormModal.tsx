@@ -1,7 +1,7 @@
 'use client'
-import { TableSchema } from '@/app/api/db/[tableName]/route'
+import { TableSchema, TableSettings } from '@/app/api/db/[tableName]/route'
 import 'react'
-import { FC, useEffect, useState } from 'react'
+import { FC, Fragment, useEffect, useState } from 'react'
 import Modal from '@mui/material/Modal'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -13,6 +13,7 @@ import { Item } from './types'
 export const NewItemFormModal: FC<{
   tableSchema: TableSchema,
   refTablesData: Record<string, Item[]>
+  refTablesSettings: Record<string, TableSettings>
   readOnly: boolean,
   open: boolean,
   onSave: (item: Item) => void,
@@ -20,6 +21,7 @@ export const NewItemFormModal: FC<{
 }> = ({
   tableSchema,
   refTablesData,
+  refTablesSettings,
   readOnly,
   open,
   onSave,
@@ -32,7 +34,6 @@ export const NewItemFormModal: FC<{
       ...Object.fromEntries(Object.entries(tableSchema).map(([key, schema]) => [key, schema.default]).filter(([_, v]) => !!v)),
       _id: uuid(),
     }
-    console.log(val)
     setValue(val)
   }, [open, tableSchema])
   
@@ -45,10 +46,19 @@ export const NewItemFormModal: FC<{
         <Typography variant='h4' color='GrayText'>New Item</Typography>
         <hr/>
         <Box className='flex gap-3 w-full flex-row mt-5 mb-5 flex-wrap'>
-          {Object.entries(tableSchema).map(([key, schema]) => (<>
+          {Object.entries(tableSchema).map(([key, schema]) => (<Fragment key={key}>
             <Typography>{schema.appearance.displayName}</Typography>
-            <CellEditor schema={schema} row={currValue} value={currValue[key]} refTablesData={refTablesData} field={key} onRowChange={setValue} />
-          </>))}
+            <CellEditor 
+              schema={schema}
+              tableSchema={tableSchema} 
+              field={key} 
+              value={currValue[key]} 
+              row={currValue} 
+              refTablesData={refTablesData} 
+              refTablesSettings={refTablesSettings}
+              onRowChange={setValue} 
+            />
+          </Fragment>))}
         </Box>
         <hr/>
         <Box className='flex flex-row-reverse gap-3'>

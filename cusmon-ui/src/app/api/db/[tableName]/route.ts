@@ -5,7 +5,7 @@ import { z } from 'zod'
 const settingsTableName = '_settings'
 const settingsTableId = (tableName: string) => `table#${tableName}`
 
-const FieldType = z.enum(['string', 'select', 'decimal', 'integer', 'currency', 'date', 'time', 'date-time', 'reference'])
+const FieldType = z.enum(['string', 'select', 'decimal', 'integer', 'currency', 'date', 'time', 'date-time', 'reference', 'copy'])
 
 const FieldSchema = z.object({
   type: FieldType,
@@ -32,6 +32,7 @@ const FieldSchema = z.object({
     columnNames: z.array(z.string()).optional(),
     dateFormat: z.string().optional(),
     searchReferenceColumn: z.string().optional(),
+    copyFromReference: z.string().optional(),
   }).optional(),
   sort: z.enum(['ASC', 'DESC']).optional(),
 })

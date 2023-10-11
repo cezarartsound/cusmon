@@ -4,7 +4,7 @@ import 'react-data-grid/lib/styles.css'
 
 import { GridColDef, GridRenderCellParams, GridRenderEditCellParams, DataGrid as DataGrid, useGridApiContext, GridSortItem } from '@mui/x-data-grid'
 import { DeleteTable } from '@/app/api/db/route'
-import { Button, Chip, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from '@mui/material'
+import { Button, Chip, CircularProgress, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from '@mui/material'
 import { FC, useEffect, useMemo, useState } from 'react'
 import { FieldSchema, TableSchema, TableSettings } from '@/app/api/db/[tableName]/route'
 import { TableSchemaFormModal } from './TableSchemaFormModal'
@@ -22,18 +22,29 @@ import dayjs from 'dayjs'
 import { useFetch } from './AlertProvider'
 
 const cellEditor = (
-  schema: FieldSchema, 
+  schema: FieldSchema,
+  tableSchema: TableSchema, 
   tables: Record<string, Item[]>,
+  settings: Record<string, TableSettings>
 ): FC<GridRenderEditCellParams<Item, Item[0]>> => {
   const inner: FC<GridRenderEditCellParams<Item, Item[0]>> = 
-    (props) => <CellEditor schema={schema} refTablesData={tables} {...props}/>
+    (props) => <CellEditor schema={schema} tableSchema={tableSchema} refTablesData={tables} refTablesSettings={settings} {...props}/>
   return inner
 }
 
 const cellViewer = (
   schema: FieldSchema, 
   refTablesItems: Record<string, Item[]>,
+  refTablesSettings: Record<string, TableSettings>,
 ): FC<GridRenderCellParams<Item, unknown>> => {
+  
+  if (schema.type === 'copy') {
+    const refTableSchema = schema.reference?.table && refTablesSettings[schema.reference.table]?.schema
+    const refColumnSchema = refTableSchema && schema.reference?.fields?.[0] && refTableSchema[schema.reference.fields[0]]
+    if (!refColumnSchema) return () => <CircularProgress />
+    return cellViewer(refColumnSchema, refTablesItems, refTablesSettings)
+  }
+
   const inner: FC<GridRenderCellParams<Item, unknown>> = ({
     row,
     field,
@@ -76,6 +87,7 @@ export const TableEditor: FC<{
   const [items, setItems] = useState<Item[]>([])
   const [selectedRows, setSelectedRows] = useState<string[]>([])
   const [refTablesItems, setRefTablesItems] = useState<Record<string, Item[]>>({})
+  const [refTablesSettings, setRefTablesSettings] = useState<Record<string, TableSettings>>({})
   const [tableSettings, _setTableSettings] = useState<TableSettings>({})
   const [schemaOpen, setSchemaOpen] = useState<boolean>(false)
   const [actionsMenuAnchor, setActionsMenuAnchor] = useState<null | HTMLElement>(null)
@@ -88,11 +100,15 @@ export const TableEditor: FC<{
 
     if (settings?.schema) {
       new Set(Object.entries(settings.schema)
-        .filter(([_, s]) => s.type === 'reference')
-        .map(([_, s]) => s.reference?.table ?? '')
-        .filter(refTable => !Object.keys(refTablesItems).includes(refTable)))
-        .forEach(refTable => fetch(`/api/db/${refTable}/items`)
-          .then(async res => {if (res.ok) { const v = await res.json(); setRefTablesItems(r => ({...r, [refTable]: v}))}}))
+        .map(([_, s]) => s.reference?.table) // fetch references
+        .filter((v): v is string => !!v)
+        .filter(refTable => !refTablesItems[refTable]))
+        .forEach(refTable => {
+          fetch(`/api/db/${refTable}`)
+            .then(async res => {if (res.ok) { const v = await res.json(); setRefTablesSettings(r => ({...r, [refTable]: v}))}})
+          fetch(`/api/db/${refTable}/items`)
+            .then(async res => {if (res.ok) { const v = await res.json(); setRefTablesItems(r => ({...r, [refTable]: v}))}})
+        })
     }
   }
 
@@ -160,8 +176,8 @@ export const TableEditor: FC<{
       hideable: schema.appearance.hide,
       sortable: true,
       resizable: true,
-      renderEditCell: cellEditor(schema, refTablesItems),
-      renderCell: cellViewer(schema, refTablesItems),
+      renderEditCell: cellEditor(schema, tableSettings.schema!, refTablesItems, refTablesSettings),
+      renderCell: cellViewer(schema, refTablesItems, refTablesSettings),
       width: schema.appearance.preferredWidth ?? 150,
     })) || []
     
@@ -278,6 +294,7 @@ export const TableEditor: FC<{
     <TableSchemaFormModal 
       tables={allTables.filter(t => t !== tableName)}
       tablesData={refTablesItems}
+      tablesSettings={refTablesSettings}
       open={schemaOpen} 
       onClose={() => setSchemaOpen(false)} 
       value={tableSettings.schema ?? {}}
@@ -288,6 +305,7 @@ export const TableEditor: FC<{
       <NewItemFormModal
         tableSchema={tableSettings.schema}
         refTablesData={refTablesItems}
+        refTablesSettings={refTablesSettings}
         readOnly={loading}
         open={addingNew}
         onSave={onSaveNewItem}
@@ -296,6 +314,7 @@ export const TableEditor: FC<{
       <ImportFileModal
         tableSchema={tableSettings.schema}
         refTablesData={refTablesItems}
+        refTablesSettings={refTablesSettings}
         readOnly={loading}
         open={importingFile}
         onSave={onSaveNewItems}
