@@ -44,7 +44,7 @@ export default function Home() {
   }, [])
 
   return (
-    <main className="flex min-h-screen flex-col justify-between p-5 gap-5 gone">
+    <main className="flex min-h-screen flex-col justify-between p-2 gap-5 gone">
       <AlertProvider><>
 
         <Connect onConnected={t => {setTables(t); if (t.length) setTab(t[0])}} />

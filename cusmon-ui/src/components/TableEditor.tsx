@@ -2,10 +2,10 @@
 import 'react'
 import 'react-data-grid/lib/styles.css'
 
-import { GridColDef, GridRenderCellParams, GridRenderEditCellParams, DataGrid as DataGrid, useGridApiContext, GridSortItem } from '@mui/x-data-grid'
+import { GridColDef, GridRenderCellParams, GridRenderEditCellParams, DataGrid as DataGrid, GridSortItem } from '@mui/x-data-grid'
 import { DeleteTable } from '@/app/api/db/route'
-import { Button, Chip, CircularProgress, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from '@mui/material'
-import { FC, useEffect, useMemo, useState } from 'react'
+import { Button, ButtonGroup, Chip, CircularProgress, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from '@mui/material'
+import { FC, ReactElement, useEffect, useMemo, useState } from 'react'
 import { FieldSchema, TableSchema, TableSettings } from '@/app/api/db/[tableName]/route'
 import { TableSchemaFormModal } from './TableSchemaFormModal'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -20,6 +20,7 @@ import { CellEditor, stringToColour } from './CellEditor'
 import { GridInitialStateCommunity } from '@mui/x-data-grid/models/gridStateCommunity'
 import dayjs from 'dayjs'
 import { useFetch } from './AlertProvider'
+import { Dashboard } from './Dashboard'
 
 const cellEditor = (
   schema: FieldSchema,
@@ -93,6 +94,7 @@ export const TableEditor: FC<{
   const [actionsMenuAnchor, setActionsMenuAnchor] = useState<null | HTMLElement>(null)
   const [addingNew, setAddingNew] = useState<boolean>(false)
   const [importingFile, setImportingFile] = useState<boolean>(false)
+  const [view, setView] = useState<'charts'|'table'>('table')
   const {fetch} = useFetch()
 
   const setTableSettings = (settings: TableSettings) => {
@@ -241,6 +243,10 @@ export const TableEditor: FC<{
       <div className='flex gap-3 flex-row-reverse'>
         <Button variant='outlined' onClick={e => setActionsMenuAnchor(e.currentTarget)}>Actions</Button>
         <Button variant='outlined' onClick={() => setSchemaOpen(true)}>Schema</Button>
+        <ButtonGroup>
+          <Button variant={view === 'charts' ? 'contained' : 'outlined'} onClick={() => setView('charts')}>Charts</Button>
+          <Button variant={view === 'table' ? 'contained' : 'outlined'} onClick={() => setView('table')}>Table</Button>
+        </ButtonGroup>
         
         <Menu
           anchorEl={actionsMenuAnchor}
@@ -277,7 +283,7 @@ export const TableEditor: FC<{
           </MenuItem>
         </Menu>
       </div>
-      {!!columns.length && <DataGrid 
+      {view === 'table' && !!columns.length && <DataGrid 
         editMode='row'
         initialState={initialGridState}
         loading={loading}
@@ -288,6 +294,12 @@ export const TableEditor: FC<{
         getRowId={item => item._id}
         onRowSelectionModelChange={e => setSelectedRows(e as string[])}
         processRowUpdate={newItem => {onRowChanged(newItem); return newItem}}
+      />}
+      {view === 'charts' && tableSettings.schema && <Dashboard 
+        items={items} 
+        tableSchema={tableSettings.schema} 
+        refTablesItems={refTablesItems} 
+        refTablesSettings={refTablesSettings} 
       />}
     </div>
 
