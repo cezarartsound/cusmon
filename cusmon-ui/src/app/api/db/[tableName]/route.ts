@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '../../connections'
 import { z } from 'zod'
+import { Db } from 'mongodb'
 
 const settingsTableName = '_settings'
 const settingsTableId = (tableName: string) => `table#${tableName}`
@@ -52,6 +53,10 @@ type DbItem = TableSettings & {
   _id: string
 }
 
+export const getTableSettings = (db: Db, tableName: string): Promise<TableSettings|undefined> => {
+  return db.collection<DbItem>(settingsTableName).findOne({_id: settingsTableId(tableName)})
+}
+
 export async function GET(req: NextRequest, {params}: {params: {tableName?: string}}) {
   const {tableName} = params
   if (typeof tableName !== 'string') return NextResponse.json(null, {status: 400})
@@ -59,8 +64,8 @@ export async function GET(req: NextRequest, {params}: {params: {tableName?: stri
   const db = await getDb(req)
   if (!db) return NextResponse.json(null, {status: 403})
   
-  const {_id, ...value} = (await db.collection<DbItem>(settingsTableName).findOne({_id: settingsTableId(tableName)})) ?? {}
-
+  const value = await getTableSettings(db, tableName)
+  
   return NextResponse.json(value, {status: 200})
 }
 

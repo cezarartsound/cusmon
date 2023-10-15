@@ -80,6 +80,83 @@ const mapValue = (value: any, schema: FieldSchema, refTableData?: Item[]): strin
   }
 }
 
+function* getAndMapData(
+  input: {
+    table: any[][], 
+    firstRow: number, 
+    firstCol: number, 
+    columnsNames: string[],
+  },
+  config: {
+    tableSchema: TableSchema,
+    mapping: Record<number, string[]>,
+    refTablesData: Record<string, Item[]>,
+    autoFill: Record<string, any>,
+    advancedAutoFill: Record<string, AdvancedAutoFill|undefined>, 
+  },
+  maxItems: number = Infinity,
+): Generator<Item> {
+
+  const {table, firstRow, firstCol, columnsNames: columnNames} = input
+  const {mapping, tableSchema, refTablesData, autoFill, advancedAutoFill} = config
+
+  console.log('Getting data...')
+
+  let count = 0
+
+  for (const inputItem of getData(table, firstRow, firstCol, columnNames.length)) {
+    if(++count > (maxItems ?? Infinity)) break
+
+    const fromMapping = Object.fromEntries(Object.entries(mapping)
+      .filter(([_, v]) => !!v)
+      .flatMap(([k, v]) => v!.map(i => ([k, i])))
+      .map(([colIndex, key]) => [key, mapValue(
+        inputItem[Number(colIndex)], 
+        tableSchema[key as string],
+        tableSchema[key as string]?.reference?.table ? refTablesData[tableSchema[key as string]!.reference!.table!] : undefined,
+      )]))
+
+    const fromAutoFillBasic = Object.fromEntries(Object.entries(autoFill)
+      .filter(([key, value]) => !!value && !Object.keys(advancedAutoFill).includes(key)))
+
+    const fromAutoFillAdvanced = Object.fromEntries(Object.entries(advancedAutoFill)
+      .filter(([_, method]) => !!method)
+      .map(([key, method]) => {
+        switch(method) {
+          case 'InputRowHash':
+            return [key, sha256(inputItem.join('#')).toString()]
+          default: 
+            return [key, undefined]
+        }
+      }))
+
+    const value: Item = {
+      _id: uuid(),
+      ...fromMapping,
+      ...fromAutoFillBasic,
+      ...fromAutoFillAdvanced,
+    }
+
+    const fromCopy = Object.fromEntries(Object.entries(tableSchema)
+      .filter(([_, s]) => s.type === 'copy' && s.import?.copyFromReference)
+      .map(([k, schema]) => {
+        const refTable = schema.reference?.table
+        const refField = schema.reference?.fields?.[0]
+        const refRow = refTable && refTablesData[refTable]
+          ?.find(i => schema.import?.copyFromReference && i._id === value[schema.import.copyFromReference]) || undefined
+        const refValue = refRow && refField && refRow[refField] || undefined
+        return [k, refValue]
+      }))
+
+    console.log(`Processed: ${count}`)
+
+    yield {
+      ...fromCopy,
+      ...value,
+    }
+  }
+}
+
 type AdvancedAutoFill = 'InputRowHash'
 const advancedAutoFillOptions: AdvancedAutoFill[] = ['InputRowHash'] 
 
@@ -173,66 +250,32 @@ export const ImportFileModal: FC<{
     setLoading(true)
 
     return new Promise<Item[]>(resolve => {
-      const {firstRow, firstCol, names} = columnsFound
+      const {firstRow, firstCol, names: columnsNames} = columnsFound
 
-      const inputTable = getData(selectedSheet.data, firstRow, firstCol, names.length)
-      
-      const output = (totalItems ? [...inputTable].splice(0, totalItems) : [...inputTable]).map(inputItem => {
+      const data = getAndMapData(
+        {
+          table: selectedSheet.data,
+          firstRow,
+          firstCol,
+          columnsNames,
+        },
+        {
+          tableSchema,
+          refTablesData,
+          mapping,
+          autoFill,
+          advancedAutoFill,
+        },
+        totalItems)
 
-        const fromMapping = Object.fromEntries(Object.entries(mapping)
-          .filter(([_, v]) => !!v)
-          .flatMap(([k, v]) => v!.map(i => ([k, i])))
-          .map(([colIndex, key]) => [key, mapValue(
-            inputItem[Number(colIndex)], 
-            tableSchema[key as string],
-            tableSchema[key as string]?.reference?.table ? refTablesData[tableSchema[key as string]!.reference!.table!] : undefined,
-          )]))
+      const output = [...data]
 
-        const fromAutoFillBasic = Object.fromEntries(Object.entries(autoFill)
-          .filter(([key, value]) => !!value && !Object.keys(advancedAutoFill).includes(key)))
-
-        const fromAutoFillAdvanced = Object.fromEntries(Object.entries(advancedAutoFill)
-          .filter(([_, method]) => !!method)
-          .map(([key, method]) => {
-            switch(method) {
-              case 'InputRowHash':
-                return [key, sha256(inputItem.join('#')).toString()]
-              default: 
-                return [key, undefined]
-            }
-          }))
-
-        const value: Item = {
-          _id: uuid(),
-          ...fromMapping,
-          ...fromAutoFillBasic,
-          ...fromAutoFillAdvanced,
-        }
-
-        const fromCopy = Object.fromEntries(Object.entries(tableSchema)
-          .filter(([_, s]) => s.type === 'copy' && s.import?.copyFromReference)
-          .map(([k, schema]) => {
-            const refTable = schema.reference?.table
-            const refField = schema.reference?.fields?.[0]
-            const refRow = refTable && refTablesData[refTable]
-              ?.find(i => schema.import?.copyFromReference && i._id === value[schema.import.copyFromReference]) || undefined
-            const refValue = refRow && refField && refRow[refField] || undefined
-            return [k, refValue]
-          }))
-
-        return {
-          ...fromCopy,
-          ...value,
-        }
-      })
-
-      setItems(output)
       resolve(output)
     })
     .finally(() => setLoading(false))
   }
 
-  const testImport = () => importData(5)
+  const testImport = () => importData(5).then(setItems)
 
   const importAndSave = () => {
     importData().then(newItems => onSave(newItems))

@@ -131,15 +131,21 @@ export const TableEditor: FC<{
         .filter(([_, s]) => s.sort)
         .map(([k, s]): GridSortItem => ({field: k, sort: s.sort === 'ASC' ? 'asc' : 'desc'})),
     },
-    filter: {
-      filterModel: {
-        items: [{
-          field: 'date',
-          operator: 'startsWith',
-          value: dayjs(new Date).format('YYYY-MM'),
-        }],
+    pagination: {
+      paginationModel: {
+        page: 0,
+        pageSize: 100,
       },
     },
+    // filter: {
+    //   filterModel: {
+    //     items: [{
+    //       field: 'date',
+    //       operator: 'startsWith',
+    //       value: dayjs(new Date).format('YYYY-MM'),
+    //     }],
+    //   },
+    // },
   }), [tableSettings])
 
   const onDeleteTable = () => {
@@ -197,6 +203,7 @@ export const TableEditor: FC<{
 
   const onSaveNewItems = (items: Item[]) => {
     setLoading(true)
+    console.log(`Saving ${items.length} items`)
     fetch(`api/db/${tableName}/items/bulk`, {method: 'POST', body: JSON.stringify(items)})
       .then(res => {
         if (res.ok) {
@@ -211,7 +218,7 @@ export const TableEditor: FC<{
     setLoading(true)
     Promise.all(selectedRows.map(rowId => 
       fetch(`api/db/${tableName}/items/${rowId}`, {method: 'DELETE'})
-        .then(() => setItems(i => i.filter(ii => ii['_id'] !== rowId)))
+        .then(res => res.ok && setItems(i => i.filter(ii => ii['_id'] !== rowId)))
     )).finally(() => setLoading(false))
   }
 
@@ -237,7 +244,7 @@ export const TableEditor: FC<{
       }
     })
   }
-
+  
   return (<>
     <div className={`flex flex-col gap-3 ${className ?? ''}`}>
       <div className='flex gap-3 flex-row-reverse'>
@@ -283,24 +290,30 @@ export const TableEditor: FC<{
           </MenuItem>
         </Menu>
       </div>
-      {view === 'table' && !!columns.length && <DataGrid 
-        editMode='row'
-        initialState={initialGridState}
-        loading={loading}
-        rows={items}
-        columns={columns}
-        checkboxSelection
-        rowSelectionModel={selectedRows}
-        getRowId={item => item._id}
-        onRowSelectionModelChange={e => setSelectedRows(e as string[])}
-        processRowUpdate={newItem => {onRowChanged(newItem); return newItem}}
-      />}
-      {view === 'charts' && tableSettings.schema && <Dashboard 
-        items={items} 
-        tableSchema={tableSettings.schema} 
-        refTablesItems={refTablesItems} 
-        refTablesSettings={refTablesSettings} 
-      />}
+      {view === 'table' && !!columns.length && <div className='min-h-[500px]'>
+        <DataGrid 
+          // autoHeight
+          editMode='row'
+          rowHeight={30}
+          initialState={initialGridState}
+          loading={loading}
+          rows={items}
+          columns={columns}
+          checkboxSelection
+          rowSelectionModel={selectedRows}
+          getRowId={item => item._id}
+          onRowSelectionModelChange={e => setSelectedRows(e as string[])}
+          processRowUpdate={newItem => {onRowChanged(newItem); return newItem}}
+        />
+      </div>}
+      {view === 'charts' && tableSettings.schema && 
+        <Dashboard 
+          items={items} 
+          tableSchema={tableSettings.schema} 
+          refTablesItems={refTablesItems} 
+          refTablesSettings={refTablesSettings} 
+        />
+      }
     </div>
 
     <TableSchemaFormModal 
