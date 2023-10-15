@@ -1,22 +1,26 @@
 import { Snackbar, Alert, AlertProps } from "@mui/material"
 import { FC, createContext, useCallback, useContext, useState } from "react"
 
-const AlertContext = createContext<{
+interface AlertHook {
   success: (msg: string) => void,
   warn: (msg: string) => void,
   error: (msg: string) => void,
   info: (msg: string) => void,
-}>({
+}
+
+const AlertContext = createContext<AlertHook>({
   success: () => {},
   warn: () => {},
   error: () => {},
   info: () => {},
 })
 
+export const useAlert = (): AlertHook => useContext(AlertContext) 
+
 export const useFetch = (): {
   fetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
 } => {
-  const alert = useContext(AlertContext)
+  const alert = useAlert()
   return {
     fetch: (input, init) => fetch(input, init)
       .then(async r => {

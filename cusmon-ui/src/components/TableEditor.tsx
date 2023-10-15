@@ -3,9 +3,8 @@ import 'react'
 import 'react-data-grid/lib/styles.css'
 
 import { GridColDef, GridRenderCellParams, GridRenderEditCellParams, DataGrid as DataGrid, GridSortItem } from '@mui/x-data-grid'
-import { DeleteTable } from '@/app/api/db/route'
-import { Button, ButtonGroup, Chip, CircularProgress, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from '@mui/material'
-import { FC, ReactElement, useEffect, useMemo, useState } from 'react'
+import { Button, ButtonGroup, Chip, CircularProgress, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from '@mui/material'
+import { FC, useEffect, useMemo, useState } from 'react'
 import { FieldSchema, TableSchema, TableSettings } from '@/app/api/db/[tableName]/route'
 import { TableSchemaFormModal } from './TableSchemaFormModal'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -18,9 +17,8 @@ import { ImportFileModal } from './ImportFileModal'
 import { Item } from './types'
 import { CellEditor, stringToColour } from './CellEditor'
 import { GridInitialStateCommunity } from '@mui/x-data-grid/models/gridStateCommunity'
-import dayjs from 'dayjs'
-import { useFetch } from './AlertProvider'
 import { Dashboard } from './Dashboard'
+import { Refresh } from '@mui/icons-material'
 
 const cellEditor = (
   schema: FieldSchema,
@@ -35,15 +33,15 @@ const cellEditor = (
 
 const cellViewer = (
   schema: FieldSchema, 
-  refTablesItems: Record<string, Item[]>,
-  refTablesSettings: Record<string, TableSettings>,
+  tablesItems: Record<string, Item[]>,
+  tablesSettings: Record<string, TableSettings>,
 ): FC<GridRenderCellParams<Item, unknown>> => {
   
   if (schema.type === 'copy') {
-    const refTableSchema = schema.reference?.table && refTablesSettings[schema.reference.table]?.schema
+    const refTableSchema = schema.reference?.table && tablesSettings[schema.reference.table]?.schema
     const refColumnSchema = refTableSchema && schema.reference?.fields?.[0] && refTableSchema[schema.reference.fields[0]]
     if (!refColumnSchema) return () => <CircularProgress />
-    return cellViewer(refColumnSchema, refTablesItems, refTablesSettings)
+    return cellViewer(refColumnSchema, tablesItems, tablesSettings)
   }
 
   const inner: FC<GridRenderCellParams<Item, unknown>> = ({
@@ -58,7 +56,7 @@ const cellViewer = (
         const currencyColor = (raw === undefined ? '' : Number(raw) > 0 ? 'text-green-600' : Number(raw) < 0 ? 'text-red-600' : '')
         return <Typography className={`${classes} ${currencyColor}`}>{raw === undefined ? '-' : `${Number(raw).toFixed(2)} €`}</Typography>
       case 'reference':
-        const refItem = raw === undefined ? undefined : refTablesItems[schema.reference?.table ?? '']?.find(i => i['_id'] === raw)
+        const refItem = raw === undefined ? undefined : tablesItems[schema.reference?.table ?? '']?.find(i => i['_id'] === raw)
         const refValues = refItem ? (schema.reference?.fields ?? []).map(field => refItem[field]?.toString()) : []
         return <Typography className={classes}>{refValues.length ? refValues.join(', ') : raw?.toString()}</Typography>
       case 'select': 
@@ -73,61 +71,48 @@ const cellViewer = (
 }
 
 export const TableEditor: FC<{
-  tableName: string,
-  allTables: string[],
-  onDeleted: () => void,
   className?: string,
+  tableName: string,
+  tablesItems: Record<string, Item[]>,
+  tablesSettings: Record<string, TableSettings>,
+  loading: boolean,
+  onRefresh: (tableName: string) => Promise<boolean>,
+  onSaveSchema: (schema: TableSchema) => Promise<boolean>,
+  onSaveItem: (item: Item) => Promise<boolean>
+  onSaveNewItem: (item: Item) => Promise<boolean>,
+  onSaveNewItems: (items: Item[]) => Promise<boolean>,
+  onDeleteItems: (ids: string[]) => Promise<boolean>,
+  onDeleteTable: () => Promise<boolean>,
 }> = ({
-  tableName,
-  allTables,
-  onDeleted,
   className,
+  tableName,
+  tablesItems,
+  tablesSettings,
+  loading,
+  onRefresh,
+  onSaveSchema,
+  onSaveItem,
+  onSaveNewItem,
+  onSaveNewItems,
+  onDeleteItems,
+  onDeleteTable,
 }) => {
 
-  const [loading, setLoading] = useState(false)
-  const [items, setItems] = useState<Item[]>([])
   const [selectedRows, setSelectedRows] = useState<string[]>([])
-  const [refTablesItems, setRefTablesItems] = useState<Record<string, Item[]>>({})
-  const [refTablesSettings, setRefTablesSettings] = useState<Record<string, TableSettings>>({})
-  const [tableSettings, _setTableSettings] = useState<TableSettings>({})
   const [schemaOpen, setSchemaOpen] = useState<boolean>(false)
   const [actionsMenuAnchor, setActionsMenuAnchor] = useState<null | HTMLElement>(null)
   const [addingNew, setAddingNew] = useState<boolean>(false)
   const [importingFile, setImportingFile] = useState<boolean>(false)
   const [view, setView] = useState<'charts'|'table'>('table')
-  const {fetch} = useFetch()
 
-  const setTableSettings = (settings: TableSettings) => {
-    _setTableSettings(settings)
+  const items = tablesItems[tableName] ?? []
+  const tableSchema = tablesSettings[tableName]?.schema ?? {}
 
-    if (settings?.schema) {
-      new Set(Object.entries(settings.schema)
-        .map(([_, s]) => s.reference?.table) // fetch references
-        .filter((v): v is string => !!v)
-        .filter(refTable => !refTablesItems[refTable]))
-        .forEach(refTable => {
-          fetch(`/api/db/${refTable}`)
-            .then(async res => {if (res.ok) { const v = await res.json(); setRefTablesSettings(r => ({...r, [refTable]: v}))}})
-          fetch(`/api/db/${refTable}/items`)
-            .then(async res => {if (res.ok) { const v = await res.json(); setRefTablesItems(r => ({...r, [refTable]: v}))}})
-        })
-    }
-  }
-
-  useEffect(() => {
-    fetch(`/api/db/${tableName}`)
-      .then(async res => {if (res.ok) {
-        const settings = await res.json() as TableSettings
-        setTableSettings(settings)
-      }})
-    fetch(`/api/db/${tableName}/items`)
-      .then(async res => {if (res.ok) setItems(await res.json())})
-    
-  }, [tableName])
+  useEffect(() => {onRefresh(tableName)}, [])
   
   const initialGridState: GridInitialStateCommunity = useMemo(() => ({
     sorting: {
-      sortModel: tableSettings.schema && Object.entries(tableSettings.schema)
+      sortModel: Object.entries(tableSchema)
         .filter(([_, s]) => s.sort)
         .map(([k, s]): GridSortItem => ({field: k, sort: s.sort === 'ASC' ? 'asc' : 'desc'})),
     },
@@ -146,36 +131,9 @@ export const TableEditor: FC<{
     //     }],
     //   },
     // },
-  }), [tableSettings])
+  }), [tableSchema])
 
-  const onDeleteTable = () => {
-    const payload: DeleteTable =  {tableName: tableName}
-    
-    if(loading) return
-    setLoading(true)
-    fetch('/api/db', {method: 'DELETE', body: JSON.stringify(payload)})
-      .then(res => {if (res.ok) onDeleted()})
-      .finally(() => setLoading(false))
-  }
-
-  const onSaveSchema = (schema: TableSchema) => {
-    const newSettings = {...tableSettings, schema}
-    fetch(`/api/db/${tableName}`, {method: 'PUT', body: JSON.stringify(newSettings)})
-      .then(res => {
-        if (res.ok) {
-          setTableSettings(newSettings)
-          setSchemaOpen(false)
-        }
-      })
-  }
-
-  const onRowChanged = (row: Item) => {
-    console.log(`Updating row ${row._id}`)
-    setItems(i => i.map(r => r._id === row._id ? row : r))
-    fetch(`/api/db/${tableName}/items/${row['_id']}`, {method: 'PUT', body: JSON.stringify(row)})
-  }
-
-  const columns = tableSettings.schema && Object.entries(tableSettings.schema)
+  const columns = Object.entries(tableSchema)
     .filter(([_, schema]) => !schema.appearance?.hide)
     .map(([fieldName, schema]): GridColDef<Item> => ({
       field: fieldName,
@@ -184,46 +142,13 @@ export const TableEditor: FC<{
       hideable: schema.appearance.hide,
       sortable: true,
       resizable: true,
-      renderEditCell: cellEditor(schema, tableSettings.schema!, refTablesItems, refTablesSettings),
-      renderCell: cellViewer(schema, refTablesItems, refTablesSettings),
+      renderEditCell: cellEditor(schema, tableSchema, tablesItems, tablesSettings),
+      renderCell: cellViewer(schema, tablesItems, tablesSettings),
       width: schema.appearance.preferredWidth ?? 150,
     })) || []
-    
-  const onSaveNewItem = (item: Item) => {
-    setLoading(true)
-    fetch(`api/db/${tableName}/items`, {method: 'POST', body: JSON.stringify(item)})
-      .then(res => {
-        if (res.ok) {
-          setItems(i => [...i.filter(ii => item['_id'] !== ii['_id']), item])
-          setAddingNew(false)
-        }
-      })
-      .finally(() => setLoading(false))
-  }
-
-  const onSaveNewItems = (items: Item[]) => {
-    setLoading(true)
-    console.log(`Saving ${items.length} items`)
-    fetch(`api/db/${tableName}/items/bulk`, {method: 'POST', body: JSON.stringify(items)})
-      .then(res => {
-        if (res.ok) {
-          setItems(i => [...i.filter(ii => !items.some(it => ii['_id'] === it['_id'])), ...items])
-          setImportingFile(false)
-        }
-      })
-      .finally(() => setLoading(false))
-  }
-
-  const onDeleteSelected = () => {
-    setLoading(true)
-    Promise.all(selectedRows.map(rowId => 
-      fetch(`api/db/${tableName}/items/${rowId}`, {method: 'DELETE'})
-        .then(res => res.ok && setItems(i => i.filter(ii => ii['_id'] !== rowId)))
-    )).finally(() => setLoading(false))
-  }
 
   const onRefreshAutoColumns = () => {
-    const autoColumns = Object.entries(tableSettings.schema ?? {}).filter(([_, s]) => 
+    const autoColumns = Object.entries(tableSchema ?? {}).filter(([_, s]) => 
       s.type === 'reference' && s.reference?.table && s.import?.columnNames?.length && s.import.searchReferenceColumn)
 
     if (!autoColumns) return
@@ -231,7 +156,7 @@ export const TableEditor: FC<{
     items.filter(i => selectedRows.includes(i._id)).forEach(item => {
       const newAutoCols = autoColumns.map(([k, s]) => {
         if (s.type !== 'reference' || !s.reference) throw new Error('Auto column must be reference type')
-        const refTableData = refTablesItems[s.reference.table]
+        const refTableData = tablesItems[s.reference.table]
         const refColumn = s.import?.searchReferenceColumn
         const value = s.import?.columnNames?.map(c => item[c]).find(v => v !== undefined)       
         if (!refTableData || !refColumn || typeof value !== 'string') return [k, undefined]
@@ -240,16 +165,19 @@ export const TableEditor: FC<{
       })
 
       if (newAutoCols.some(([k, v]) => k && item[k] !== v)) {
-        onRowChanged({...item, ...Object.fromEntries(newAutoCols)})
+        onSaveItem({...item, ...Object.fromEntries(newAutoCols)})
       }
     })
   }
   
+  const onDeleteSelected = () => selectedRows.length && onDeleteItems(selectedRows)
+
   return (<>
     <div className={`flex flex-col gap-3 ${className ?? ''}`}>
       <div className='flex gap-3 flex-row-reverse'>
         <Button variant='outlined' onClick={e => setActionsMenuAnchor(e.currentTarget)}>Actions</Button>
         <Button variant='outlined' onClick={() => setSchemaOpen(true)}>Schema</Button>
+        <Button variant='outlined' onClick={() => onRefresh(tableName, true)}><Refresh/></Button>
         <ButtonGroup>
           <Button variant={view === 'charts' ? 'contained' : 'outlined'} onClick={() => setView('charts')}>Charts</Button>
           <Button variant={view === 'table' ? 'contained' : 'outlined'} onClick={() => setView('table')}>Table</Button>
@@ -303,48 +231,47 @@ export const TableEditor: FC<{
           rowSelectionModel={selectedRows}
           getRowId={item => item._id}
           onRowSelectionModelChange={e => setSelectedRows(e as string[])}
-          processRowUpdate={newItem => {onRowChanged(newItem); return newItem}}
+          processRowUpdate={newItem => {onSaveItem(newItem); return newItem}}
         />
       </div>}
-      {view === 'charts' && tableSettings.schema && 
+      {view === 'charts' && 
         <Dashboard 
           items={items} 
-          tableSchema={tableSettings.schema} 
-          refTablesItems={refTablesItems} 
-          refTablesSettings={refTablesSettings} 
+          tableSchema={tableSchema} 
+          refTablesItems={tablesItems} 
+          refTablesSettings={tablesSettings} 
         />
       }
     </div>
 
     <TableSchemaFormModal 
-      tables={allTables.filter(t => t !== tableName)}
-      tablesData={refTablesItems}
-      tablesSettings={refTablesSettings}
+      tables={Object.keys(tablesSettings).filter(t => t !== tableName)}
+      tablesData={tablesItems}
+      tablesSettings={tablesSettings}
       open={schemaOpen} 
       onClose={() => setSchemaOpen(false)} 
-      value={tableSettings.schema ?? {}}
-      onSave={onSaveSchema}
+      value={tableSchema}
+      onSave={(schema) => onSaveSchema(schema).then(res => res && setSchemaOpen(false))}
     />
-    
-    {!!tableSettings.schema && <>
-      <NewItemFormModal
-        tableSchema={tableSettings.schema}
-        refTablesData={refTablesItems}
-        refTablesSettings={refTablesSettings}
-        readOnly={loading}
-        open={addingNew}
-        onSave={onSaveNewItem}
-        onClose={() => setAddingNew(false)}
-      />
-      <ImportFileModal
-        tableSchema={tableSettings.schema}
-        refTablesData={refTablesItems}
-        refTablesSettings={refTablesSettings}
-        readOnly={loading}
-        open={importingFile}
-        onSave={onSaveNewItems}
-        onClose={() => setImportingFile(false)}
-      />
-    </>}
+  
+    <NewItemFormModal
+      tableSchema={tableSchema}
+      refTablesData={tablesItems}
+      refTablesSettings={tablesSettings}
+      readOnly={loading}
+      open={addingNew}
+      onSave={(item) => onSaveNewItem(item).then(res => res && setAddingNew(false))}
+      onClose={() => setAddingNew(false)}
+    />
+
+    <ImportFileModal
+      tableSchema={tableSchema}
+      refTablesData={tablesItems}
+      refTablesSettings={tablesSettings}
+      readOnly={loading}
+      open={importingFile}
+      onSave={items => onSaveNewItems(items).then(res => res && setImportingFile(false))}
+      onClose={() => setImportingFile(false)}
+    />
   </>)
 } 

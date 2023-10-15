@@ -15,7 +15,7 @@ export async function GET(req: NextRequest, {params}: {params: {tableName?: stri
   const values = await db.collection(tableName)
     .find()
     .sort(Object.fromEntries(Object.entries(schema).filter(([_, s]) => !!s.sort).map(([k, s]) => [k, s.sort === 'ASC' ? 1 : -1])))
-    .limit(1000)
+    .limit(10000)
     .toArray()
 
   return NextResponse.json(values, {status: 200})
