@@ -9,12 +9,12 @@ import Typography from '@mui/material/Typography'
 import CircularProgress from '@mui/material/CircularProgress'
 import xlsx from 'node-xlsx'
 import { Autocomplete, FormControlLabel, Switch, TextField } from '@mui/material'
-import { CellEditor } from './CellEditor'
 import sha256 from 'crypto-js/sha256'
 import dayjs from 'dayjs'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
 import { Item } from './types'
 import { v4 as uuid } from 'uuid'
+import { getField } from './Fields/fields'
 
 dayjs.extend(customParseFormat)
 
@@ -346,32 +346,38 @@ export const ImportFileModal: FC<{
             {
               Object.entries(tableSchema)
                 .filter(([key]) => !Object.values(mapping).flat().includes(key))
-                .map(([key, schema]) => (<div key={key} className='flex gap-2'>
-                  <Typography className='w-1/3'>{schema.appearance.displayName}</Typography>
-                  {!advancedAutoFill[key]
-                    ? <CellEditor 
-                        schema={schema}
-                        tableSchema={tableSchema} 
-                        field={key} 
-                        value={autoFill[key]} 
-                        row={autoFill as Item} 
-                        refTablesData={refTablesData}
-                        refTablesSettings={refTablesSettings} 
-                        onRowChange={v => setAutoFill(a => ({...a, [key]: v[key]}))}
-                      />
-                    : <Autocomplete 
-                        className='w-full'
-                        size='small'
-                        options={advancedAutoFillOptions}
-                        value={advancedAutoFill[key]}
-                        onChange={(_, value) => setAdvancedAutoFill(v => ({...v, [key]: value ?? undefined}))}
-                        renderInput={(params) => <TextField {...params}/>}
-                      />
+                .map(([key, schema]) => {
+                  const field = getField(schema.type)
+                  return (
+                    <div key={key} className='flex gap-2'>
+                      <Typography className='w-1/3'>{schema.appearance.displayName}</Typography>
+                      {!advancedAutoFill[key]
+                        ? <field.Editor
+                            schema={schema}
+                            tableSchema={tableSchema}
+                            field={key}
+                            value={autoFill[key]}
+                            item={autoFill as Item}
+                            tablesItems={refTablesData}
+                            tablesSettings={refTablesSettings}
+                            onChange={v => setAutoFill(a => ({...a, [key]: v}))}
+                            onItemChange={v => setAutoFill(a => ({...a, [key]: v[key]}))}
+                          />
+                        : <Autocomplete 
+                            className='w-full'
+                            size='small'
+                            options={advancedAutoFillOptions}
+                            value={advancedAutoFill[key]}
+                            onChange={(_, value) => setAdvancedAutoFill(v => ({...v, [key]: value ?? undefined}))}
+                            renderInput={(params) => <TextField {...params}/>}
+                          />
+                      }
+                      <FormControlLabel label="Advanced" control={
+                        <Switch checked={!!advancedAutoFill[key]} onChange={e => setAdvancedAutoFill(a => ({...a, [key]: e.target.checked ? 'InputRowHash' : undefined}))}/>
+                      }/>
+                    </div>)
                   }
-                  <FormControlLabel label="Advanced" control={
-                    <Switch checked={!!advancedAutoFill[key]} onChange={e => setAdvancedAutoFill(a => ({...a, [key]: e.target.checked ? 'InputRowHash' : undefined}))}/>
-                  }/>
-                </div>))
+                )
             }
 
             <hr/>
@@ -382,20 +388,26 @@ export const ImportFileModal: FC<{
               items.map(item => (
                 <div key={item._id}>
                   { 
-                    Object.entries(tableSchema).map(([key, schema]) => (<Fragment key={key}>
-                      <Typography className='w-1/3'>{schema.appearance.displayName}</Typography>
-                      <CellEditor 
-                        readOnly={true} 
-                        schema={schema}
-                        tableSchema={tableSchema} 
-                        field={key} 
-                        value={item[key]} 
-                        row={item} 
-                        refTablesData={refTablesData} 
-                        refTablesSettings={refTablesSettings}
-                        onRowChange={v => setAutoFill(a => ({...a, [key]: v[key]}))}
-                      />
-                    </Fragment>))
+                    Object.entries(tableSchema).map(([key, schema]) => {
+                      const field = getField(schema.type)
+                      return (
+                        <Fragment key={key}>
+                          <Typography className='w-1/3'>{schema.appearance.displayName}</Typography>
+                          <field.Editor 
+                            readOnly={true}
+                            schema={schema}
+                            tableSchema={tableSchema}
+                            field={key}
+                            value={autoFill[key]}
+                            item={autoFill as Item}
+                            tablesItems={refTablesData}
+                            tablesSettings={refTablesSettings}
+                            onChange={v => setAutoFill(a => ({...a, [key]: v}))}
+                            onItemChange={v => setAutoFill(a => ({...a, [key]: v[key]}))}
+                          />
+                        </Fragment>
+                      )
+                    })
                   } 
                 </div>
               ))

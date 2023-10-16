@@ -2,8 +2,8 @@
 import 'react'
 import 'react-data-grid/lib/styles.css'
 
-import { GridColDef, GridRenderCellParams, GridRenderEditCellParams, DataGrid as DataGrid, GridSortItem } from '@mui/x-data-grid'
-import { Button, ButtonGroup, Chip, CircularProgress, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from '@mui/material'
+import { GridColDef, GridRenderCellParams, GridRenderEditCellParams, DataGrid as DataGrid, GridSortItem, useGridApiContext } from '@mui/x-data-grid'
+import { Button, ButtonGroup, ListItemIcon, ListItemText, Menu, MenuItem } from '@mui/material'
 import { FC, useEffect, useMemo, useState } from 'react'
 import { FieldSchema, TableSchema, TableSettings } from '@/app/api/db/[tableName]/route'
 import { TableSchemaFormModal } from './TableSchemaFormModal'
@@ -15,19 +15,52 @@ import RepartitionIcon from '@mui/icons-material/Repartition'
 import { NewItemFormModal } from './NewItemFormModal'
 import { ImportFileModal } from './ImportFileModal'
 import { Item } from './types'
-import { CellEditor, stringToColour } from './CellEditor'
 import { GridInitialStateCommunity } from '@mui/x-data-grid/models/gridStateCommunity'
 import { Dashboard } from './Dashboard'
 import { Refresh } from '@mui/icons-material'
+import { getField } from './Fields/fields'
 
 const cellEditor = (
   schema: FieldSchema,
   tableSchema: TableSchema, 
-  tables: Record<string, Item[]>,
-  settings: Record<string, TableSettings>
+  tablesItems: Record<string, Item[]>,
+  tablesSettings: Record<string, TableSettings>
 ): FC<GridRenderEditCellParams<Item, Item[0]>> => {
-  const inner: FC<GridRenderEditCellParams<Item, Item[0]>> = 
-    (props) => <CellEditor schema={schema} tableSchema={tableSchema} refTablesData={tables} refTablesSettings={settings} {...props}/>
+  const inner: FC<GridRenderEditCellParams<Item, Item[0]>> = ({
+    value,
+    row,
+    field,
+    id,
+    readOnly,
+    onRowChange,
+  }) => {
+    
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- id never changes to this is safe
+    const apiRef = id ? useGridApiContext() : undefined
+  
+    const fieldComp = getField(schema.type) 
+
+    return <fieldComp.Editor 
+      {...{
+        field,
+        schema,
+        tableSchema,
+        readOnly,
+        value,
+        onChange: v => {
+          apiRef?.current.setEditCellValue({ id: id!, field, value: v })
+          onRowChange && onRowChange({...row, [field]: v})
+        },
+        item: row,
+        onItemChange: v => {
+          apiRef?.current.setEditCellValue({ id: id!, field, value: v[field] })
+          onRowChange && onRowChange(v)
+        },
+        tablesItems,
+        tablesSettings,
+      }}
+    />
+  }
   return inner
 }
 
@@ -37,35 +70,19 @@ const cellViewer = (
   tablesSettings: Record<string, TableSettings>,
 ): FC<GridRenderCellParams<Item, unknown>> => {
   
-  if (schema.type === 'copy') {
-    const refTableSchema = schema.reference?.table && tablesSettings[schema.reference.table]?.schema
-    const refColumnSchema = refTableSchema && schema.reference?.fields?.[0] && refTableSchema[schema.reference.fields[0]]
-    if (!refColumnSchema) return () => <CircularProgress />
-    return cellViewer(refColumnSchema, tablesItems, tablesSettings)
-  }
-
   const inner: FC<GridRenderCellParams<Item, unknown>> = ({
     row,
     field,
   }) => {
-    const raw = row[field]
-    const classes = 'align-middle h-fit w-full inline'
-  
-    switch (schema.type) {
-      case 'currency':
-        const currencyColor = (raw === undefined ? '' : Number(raw) > 0 ? 'text-green-600' : Number(raw) < 0 ? 'text-red-600' : '')
-        return <Typography className={`${classes} ${currencyColor}`}>{raw === undefined ? '-' : `${Number(raw).toFixed(2)} €`}</Typography>
-      case 'reference':
-        const refItem = raw === undefined ? undefined : tablesItems[schema.reference?.table ?? '']?.find(i => i['_id'] === raw)
-        const refValues = refItem ? (schema.reference?.fields ?? []).map(field => refItem[field]?.toString()) : []
-        return <Typography className={classes}>{refValues.length ? refValues.join(', ') : raw?.toString()}</Typography>
-      case 'select': 
-        if (schema.validations?.multiple) {
-          return (raw as string[])?.map(val => <Chip style={stringToColour(val)} variant='filled' size='small' key={val} label={val}/>)
-        }
-      default:
-        return <Typography className={classes}>{raw?.toString()}</Typography>
-    }
+    const fieldComp = getField(schema.type)
+
+    return <fieldComp.Viewer
+      className='align-middle h-fit w-full inline'
+      schema={schema}
+      value={row[field]}
+      tablesItems={tablesItems}
+      tablesSettings={tablesSettings}
+    />
   }
   return inner
 }
@@ -76,7 +93,7 @@ export const TableEditor: FC<{
   tablesItems: Record<string, Item[]>,
   tablesSettings: Record<string, TableSettings>,
   loading: boolean,
-  onRefresh: (tableName: string) => Promise<boolean>,
+  onRefresh: (tableName: string, force?: boolean) => Promise<boolean>,
   onSaveSchema: (schema: TableSchema) => Promise<boolean>,
   onSaveItem: (item: Item) => Promise<boolean>
   onSaveNewItem: (item: Item) => Promise<boolean>,
@@ -119,7 +136,7 @@ export const TableEditor: FC<{
     pagination: {
       paginationModel: {
         page: 0,
-        pageSize: 100,
+        pageSize: 50,
       },
     },
     // filter: {
@@ -154,7 +171,8 @@ export const TableEditor: FC<{
     if (!autoColumns) return
 
     items.filter(i => selectedRows.includes(i._id)).forEach(item => {
-      const newAutoCols = autoColumns.map(([k, s]) => {
+      
+      const refCols = Object.fromEntries(autoColumns.map<[string, keyof Item|undefined]>(([k, s]) => {
         if (s.type !== 'reference' || !s.reference) throw new Error('Auto column must be reference type')
         const refTableData = tablesItems[s.reference.table]
         const refColumn = s.import?.searchReferenceColumn
@@ -162,10 +180,23 @@ export const TableEditor: FC<{
         if (!refTableData || !refColumn || typeof value !== 'string') return [k, undefined]
         const refId = refTableData.find(d => typeof d[refColumn] === 'string' && new RegExp(d[refColumn] as string, 'u').test(value))?.['_id']
         return [k, refId]
-      })
+      }).filter(([k, v]) => !!v && item[k] !== v))
+      
+      const itemWithNewRefCols = {...item, ...refCols}
 
-      if (newAutoCols.some(([k, v]) => k && item[k] !== v)) {
-        onSaveItem({...item, ...Object.fromEntries(newAutoCols)})
+      const fromCopy = Object.fromEntries(Object.entries(tableSchema)
+        .filter(([_, s]) => s.type === 'copy' && s.import?.copyFromReference)
+        .map(([k, schema]) => {
+          const refTable = schema.reference?.table
+          const refField = schema.reference?.fields?.[0]
+          const refRow = refTable && tablesItems[refTable]
+            ?.find(i => schema.import?.copyFromReference && i._id === itemWithNewRefCols[schema.import.copyFromReference]) || undefined
+          const refValue = refRow && refField && refRow[refField] || undefined
+          return [k, refValue]
+        }))
+
+      if (Object.keys(refCols).length || Object.keys(fromCopy).length) {
+        onSaveItem({...item, ...fromCopy, ...refCols})
       }
     })
   }
@@ -220,7 +251,6 @@ export const TableEditor: FC<{
       </div>
       {view === 'table' && !!columns.length && <div className='min-h-[500px]'>
         <DataGrid 
-          // autoHeight
           editMode='row'
           rowHeight={30}
           initialState={initialGridState}
@@ -245,7 +275,6 @@ export const TableEditor: FC<{
     </div>
 
     <TableSchemaFormModal 
-      tables={Object.keys(tablesSettings).filter(t => t !== tableName)}
       tablesData={tablesItems}
       tablesSettings={tablesSettings}
       open={schemaOpen} 

@@ -6,9 +6,9 @@ import Modal from '@mui/material/Modal'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Typography from '@mui/material/Typography'
-import { CellEditor } from './CellEditor'
 import { v4 as uuid } from 'uuid'
 import { Item } from './types'
+import { getField } from './Fields/fields'
 
 export const NewItemFormModal: FC<{
   tableSchema: TableSchema,
@@ -20,8 +20,8 @@ export const NewItemFormModal: FC<{
   onClose: () => void,
 }> = ({
   tableSchema,
-  refTablesData,
-  refTablesSettings,
+  refTablesData: tablesItems,
+  refTablesSettings: tablesSettings,
   readOnly,
   open,
   onSave,
@@ -46,19 +46,27 @@ export const NewItemFormModal: FC<{
         <Typography variant='h4' color='GrayText'>New Item</Typography>
         <hr/>
         <Box className='flex gap-3 w-full flex-row mt-5 mb-5 flex-wrap'>
-          {Object.entries(tableSchema).map(([key, schema]) => (<Fragment key={key}>
-            <Typography>{schema.appearance.displayName}</Typography>
-            <CellEditor 
-              schema={schema}
-              tableSchema={tableSchema} 
-              field={key} 
-              value={currValue[key]} 
-              row={currValue} 
-              refTablesData={refTablesData} 
-              refTablesSettings={refTablesSettings}
-              onRowChange={setValue} 
-            />
-          </Fragment>))}
+          {Object.entries(tableSchema).map(([key, schema]) => {
+            const field = getField(schema.type)
+            return (
+              <Fragment key={key}>
+                <Typography>{schema.appearance.displayName}</Typography>
+                <field.Editor
+                  label={''}
+                  key={key}
+                  schema={schema}
+                  tableSchema={tableSchema}
+                  field={key}
+                  value={currValue[key]}
+                  item={currValue}
+                  tablesItems={tablesItems}
+                  tablesSettings={tablesSettings}
+                  onItemChange={setValue}
+                  onChange={v => setValue(p => ({...p, [key]: v}))}
+                /> 
+              </Fragment>
+            )
+          })}
         </Box>
         <hr/>
         <Box className='flex flex-row-reverse gap-3'>
